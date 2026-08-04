@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
-  copyItem, hideSelf, isMac, removeItem, togglePin, useQuickOpen, type Loaded,
+  copyItem, hideSelf, isMac, removeItem, togglePin, useFitWindow, useQuickOpen, type Loaded,
 } from './api'
 import {
   PIN_PATH, SEL_BAR, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, typeLabel,
@@ -20,6 +20,8 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
   const [selRaw, setSel] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  useFitWindow(panel)
 
   const list = segFilter(store.items, seg).filter((x) => fz(q, hay(x)))
   const sel = Math.min(selRaw, Math.max(0, list.length - 1))
@@ -87,10 +89,10 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
   }, [list, sel, copyAndClose, fire])
 
   return (
-    <div style={s('width:760px;max-width:calc(100vw - 40px);animation:popIn .22s cubic-bezier(.32,.72,0,1)')}>
+    <div ref={panel} style={s('width:760px;animation:popIn .22s cubic-bezier(.32,.72,0,1)')}>
       <div
         style={{
-          ...s('background:var(--glass);backdrop-filter:blur(50px) saturate(190%);-webkit-backdrop-filter:blur(50px) saturate(190%);border:.5px solid var(--line);box-shadow:var(--shadow);overflow:hidden'),
+          ...s('background:var(--glass);border:.5px solid var(--line);overflow:hidden'),
           borderRadius: isMac ? '18px' : '12px',
         }}
       >
@@ -245,11 +247,12 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
             <span style={s('font-family:ui-monospace,monospace;opacity:.8')}>↵</span>
           </button>
         </div>
-      </div>
-      <div style={s('text-align:center;margin-top:16px;font-size:11.5px;color:var(--text-2);font-weight:500')}>
-        Invoked with{' '}
-        <span style={s('font-family:ui-monospace,monospace;font-weight:640;color:var(--text)')}>{hotkey}</span>{' '}
-        — copies the item and closes instantly
+        <div style={s('height:.5px;background:var(--line)')} />
+        <div style={s('text-align:center;padding:8px 16px;font-size:11px;color:var(--text-3);font-weight:500;background:var(--glass-2)')}>
+          Invoked with{' '}
+          <span style={s('font-family:ui-monospace,monospace;font-weight:640;color:var(--text-2)')}>{hotkey}</span>{' '}
+          — copies the item and closes instantly
+        </div>
       </div>
     </div>
   )

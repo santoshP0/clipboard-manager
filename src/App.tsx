@@ -36,8 +36,8 @@ export default function App() {
 
   // Each window is its own frameless panel, so the page itself stays transparent.
   const layout: Record<string, string> = {
-    quick: 'display:flex;align-items:center;justify-content:center;padding:20px',
-    menu: 'display:flex;align-items:flex-start;justify-content:center;padding:10px 16px 20px',
+    quick: 'display:block',
+    menu: 'display:block',
     main: 'padding:0',
   }
 

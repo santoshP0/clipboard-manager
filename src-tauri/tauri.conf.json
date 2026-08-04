@@ -30,8 +30,8 @@
       {
         "label": "quick",
         "title": "Memory Quick Access",
-        "width": 800,
-        "height": 640,
+        "width": 760,
+        "height": 600,
         "decorations": false,
         "transparent": true,
         "resizable": false,
@@ -40,13 +40,13 @@
         "center": true,
         "visible": false,
         "focus": false,
-        "shadow": false
+        "shadow": true
       },
       {
         "label": "menu",
         "title": "Memory Menu",
-        "width": 340,
-        "height": 520,
+        "width": 300,
+        "height": 460,
         "decorations": false,
         "transparent": true,
         "resizable": false,
@@ -54,7 +54,7 @@
         "skipTaskbar": true,
         "visible": false,
         "focus": false,
-        "shadow": false
+        "shadow": true
       }
     ],
     "security": {

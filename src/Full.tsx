@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import {
   addSnippet, copyItem, isMac, openPath, removeItem, removeSnippet, saveSettings, thumbUrl,
-  toggleFav, togglePin, runSnippet, useGoto, type Loaded,
+  copyFiles, copyText, toggleFav, togglePin, runSnippet, useGoto, type Loaded,
 } from './api'
 import {
   ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, PIN_PATH, SEL_BAR, dayBucket,
@@ -10,7 +10,8 @@ import {
   typeLabel, type Item, type Settings,
 } from './lib'
 import {
-  EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon,
+  EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon, Segmented, StackPreview,
+  SwatchPicker, Toggle,
 } from './ui'
 
 const NAV_GROUPS: { label: string; items: [string, string][] }[] = [
@@ -74,6 +75,19 @@ const TINTS = [
   ['rgba(48,209,88,.14)', 'var(--green)'],
 ]
 const DAY = 24 * 60 * 60 * 1000
+
+/** "2 images, 1 text" — the Finder-style breakdown of a selection. */
+function kindSummary(items: Item[]): string {
+  const counts = new Map<string, number>()
+  for (const it of items) counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1)
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([kind, n]) => n + ' ' + typeLabel(kind).toLowerCase() + (n > 1 ? 's' : ''))
+    .join(', ')
+}
+
+/** What an item puts on the clipboard as text. */
+const payloadOf = (it: Item) => it.body || it.url || it.value || it.path || it.title
 const hotkeyLabel = isMac ? '⌘⇧V' : 'Ctrl+Shift+V'
 
 export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => void }) {
@@ -81,14 +95,48 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
   const { settings } = store
   const [section, setSection] = useState('History')
   const [fq, setFq] = useState('')
-  const [selRaw, setSel] = useState(0)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [anchor, setAnchor] = useState(0)
+  const [collection, setCollection] = useState<string | null>(null)
 
   useGoto(useCallback((next: string) => setSection(next), []))
 
-  const mode = MODE[section] ?? 'list'
-  const list = sectionFilter(store.items, section).filter((x) => fz(fq, hay(x)))
-  const sel = Math.min(selRaw, Math.max(0, list.length - 1))
+  const inCollection = section === 'Collections' && collection !== null
+  const mode = inCollection ? 'list' : (MODE[section] ?? 'list')
+  const base = inCollection
+    ? store.items.filter((x) => x.app === collection)
+    : sectionFilter(store.items, section)
+  const list = base.filter((x) => fz(fq, hay(x)))
+  const sel = Math.min(anchor, Math.max(0, list.length - 1))
   const item = list[sel]
+  const selected = new Set(selectedIds)
+  const marked = list.filter((x) => selected.has(x.id))
+  const multi = marked.length > 1
+  // Nothing explicitly picked yet: the anchor row still reads as current.
+  const isSelected = (row: Item, i: number) => selected.has(row.id) || (!marked.length && i === sel)
+
+  const clearSel = () => {
+    setSelectedIds([])
+    setAnchor(0)
+  }
+
+  /** Explorer rules: plain replaces, cmd/ctrl toggles, shift extends. */
+  const pick = (e: React.MouseEvent, row: Item, i: number) => {
+    if (e.shiftKey && list.length) {
+      const [from, to] = sel <= i ? [sel, i] : [i, sel]
+      setSelectedIds(list.slice(from, to + 1).map((x) => x.id))
+      return
+    }
+    if (isMac ? e.metaKey : e.ctrlKey) {
+      setSelectedIds((prev) =>
+        prev.includes(row.id) ? prev.filter((id) => id !== row.id) : [...prev, row.id],
+      )
+      setAnchor(i)
+      return
+    }
+    setSelectedIds([row.id])
+    setAnchor(i)
+  }
   const meta = metaFor(item)
   const rowPad = settings.density === 'Compact' ? '7px 12px' : '11px 12px'
 
@@ -102,21 +150,49 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
     [fire],
   )
 
+  const targets = marked.length ? marked : item ? [item] : []
+
+  const copyMany = async () => {
+    if (targets.length === 1) return copy(targets[0])
+
+    // All files/images: hand over the files themselves, not their paths as text.
+    const files = targets.filter((t) => (t.kind === 'image' || t.kind === 'file') && t.path)
+    const asFiles =
+      files.length === targets.length &&
+      (await copyFiles(files.map((f) => f.path as string)).catch(() => false))
+    if (asFiles) {
+      fire('Copied ' + files.length + ' files to clipboard')
+      return
+    }
+
+    await copyText(targets.map(payloadOf).join('\n'))
+    fire('Copied ' + targets.length + ' items to clipboard')
+  }
+
+  const deleteMany = () => {
+    if (!targets.length) return
+    targets.forEach((t) => void removeItem(t.id))
+    fire(targets.length === 1 ? 'Deleted “' + targets[0].title + '”' : 'Deleted ' + targets.length + ' items')
+    clearSel()
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (mod && e.key === ',') {
         e.preventDefault()
         setSection('Settings')
-      } else if (mod && (e.key === 'Backspace' || e.key === 'Delete') && item) {
+      } else if (mod && e.key.toLowerCase() === 'a' && mode === 'list') {
         e.preventDefault()
-        void removeItem(item.id)
-        fire('Deleted “' + item.title + '”')
+        setSelectedIds(list.map((x) => x.id))
+      } else if (mod && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault()
+        deleteMany()
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [item, fire])
+  })
 
   return (
     <div style={s('height:100%;display:flex;flex-direction:column;background:var(--surface);overflow:hidden')}>
@@ -141,7 +217,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                 return (
                   <div
                     key={name}
-                    onClick={() => { setSection(name); setSel(0); setFq('') }}
+                    onClick={() => { setSection(name); clearSel(); setFq(''); setCollection(null) }}
                     className={'row' + (on ? ' sel' : '')}
                     style={s('display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;cursor:pointer')}
                   >
@@ -164,16 +240,30 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
         {/* content */}
         <div style={s('flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface)')}>
           <div style={s('height:52px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:.5px solid var(--line)')}>
-            <div style={s('font-size:19px;font-weight:680;letter-spacing:-.02em')}>{section}</div>
+            {inCollection && (
+              <button
+                onClick={() => { setCollection(null); clearSel(); setFq('') }}
+                title="Back to collections"
+                style={s('flex:none;border:0;cursor:pointer;font:inherit;font-size:12.5px;font-weight:560;color:var(--text-2);background:var(--surface-3);padding:5px 10px;border-radius:8px;display:flex;align-items:center;gap:6px')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 6l-6 6 6 6" />
+                </svg>
+                Collections
+              </button>
+            )}
+            <div style={s('font-size:19px;font-weight:680;letter-spacing:-.02em')}>
+              {inCollection ? collection : section}
+            </div>
             <div style={s('font-size:12px;color:var(--text-3);font-weight:500;margin-top:2px')}>
-              {SUBTITLE[section] ?? ''}
+              {inCollection ? `${base.length} items from ${collection}` : (SUBTITLE[section] ?? '')}
             </div>
             <div style={s('margin-left:auto;display:flex;align-items:center;gap:10px')}>
               <div style={s('display:flex;align-items:center;gap:8px;background:var(--surface-3);padding:6px 11px;border-radius:9px;width:200px')}>
                 <SearchIcon size={14} />
                 <input
                   value={fq}
-                  onChange={(e) => { setFq(e.target.value); setSel(0) }}
+                  onChange={(e) => { setFq(e.target.value); clearSel() }}
                   placeholder="Search"
                   spellCheck={false}
                   style={s('flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;color:var(--text)')}
@@ -200,15 +290,15 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                     {list.map((it, i) => (
                       <div
                         key={it.id}
-                        onClick={() => setSel(i)}
+                        onClick={(e) => pick(e, it, i)}
                         onDoubleClick={() => void copy(it)}
-                        className={'row' + (i === sel ? ' sel' : '')}
+                        className={'row' + (isSelected(it, i) ? ' sel' : '')}
                         style={{
                           ...s('display:flex;align-items:center;gap:13px;border-radius:10px;cursor:pointer;position:relative'),
                           padding: rowPad,
                         }}
                       >
-                        {i === sel && <div style={s(SEL_BAR + ';top:10px;bottom:10px')} />}
+                        {isSelected(it, i) && <div style={s(SEL_BAR + ';top:10px;bottom:10px')} />}
                         <IconBox it={it} size={38} radius={10} icon={18} />
                         <div style={s('flex:1;min-width:0')}>
                           <div style={s('display:flex;align-items:center;gap:8px')}>
@@ -248,7 +338,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
               ) : mode === 'grid' ? (
                 <Grid items={store.items} onCopy={copy} />
               ) : mode === 'collections' ? (
-                <Collections items={store.items} onOpen={() => setSection('History')} />
+                <Collections items={store.items} onOpen={setCollection} />
               ) : mode === 'snippets' ? (
                 <Snippets loaded={loaded} fire={fire} />
               ) : mode === 'stats' ? (
@@ -259,13 +349,13 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
             </div>
 
             {/* inspector */}
-            {mode === 'list' && (
+            {mode === 'list' && list.length > 0 && (
               <div className="mem-scroll" style={s('width:300px;flex:none;border-left:.5px solid var(--line);background:var(--glass-2);overflow-y:auto;padding:20px')}>
                 <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px')}>
                   <div style={s('font-size:11px;font-weight:660;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)')}>
-                    Inspector
+                    {multi ? marked.length + ' selected' : 'Inspector'}
                   </div>
-                  <div style={s('display:flex;gap:6px')}>
+                  <div style={{ ...s('display:flex;gap:6px'), visibility: multi ? 'hidden' : 'visible' }}>
                     <IconButton
                       onClick={() => {
                         if (!item) return
@@ -289,25 +379,56 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                   </div>
                 </div>
 
-                <div style={s('border-radius:12px;overflow:hidden;border:.5px solid var(--line);background:var(--surface);margin-bottom:16px')}>
-                  <Preview it={item} />
-                </div>
-                <div style={s('font-size:14px;font-weight:620;letter-spacing:-.01em;line-height:1.35;margin-bottom:16px')}>
-                  {item ? item.title : 'Nothing selected'}
-                </div>
-                <div style={s('display:flex;flex-direction:column;gap:10px;margin-bottom:16px')}>
-                  {[
-                    ['Type', item ? typeLabel(item.kind) : '—'],
-                    ['Source', item ? item.app : '—'],
-                    ['Copied', item ? exactTime(item.ts) : '—'],
-                    [meta.label, meta.value],
-                  ].map(([k, v]) => (
-                    <div key={k} style={s('display:flex;justify-content:space-between;font-size:12px')}>
-                      <span style={{ color: 'var(--text-3)' }}>{k}</span>
-                      <span style={{ color: 'var(--text-2)', fontWeight: 520 }}>{v}</span>
+                {multi ? (
+                  <>
+                    <StackPreview items={marked} />
+                    <div style={s('font-size:15px;font-weight:640;letter-spacing:-.01em;text-align:center')}>
+                      {marked.length} items
                     </div>
-                  ))}
-                </div>
+                    <div style={s('font-size:12px;color:var(--text-3);text-align:center;margin-top:3px;margin-bottom:18px')}>
+                      {kindSummary(marked)} · {humanSize(marked.reduce((sum, x) => sum + (x.bytes || 0), 0))}
+                    </div>
+                    <div style={s('font-size:11px;font-weight:640;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px')}>
+                      Information
+                    </div>
+                    <div style={s('display:flex;flex-direction:column;gap:10px;margin-bottom:16px')}>
+                      {[
+                        ['Newest', exactTime(Math.max(...marked.map((x) => x.ts)))],
+                        ['Oldest', exactTime(Math.min(...marked.map((x) => x.ts)))],
+                        ['Sources', [...new Set(marked.map((x) => x.app))].join(', ')],
+                      ].map(([k, v]) => (
+                        <div key={k} style={s('display:flex;justify-content:space-between;gap:12px;font-size:12px')}>
+                          <span style={{ color: 'var(--text-3)', flex: 'none' }}>{k}</span>
+                          <span style={s('color:var(--text-2);font-weight:520;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                            {v}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={s('border-radius:12px;overflow:hidden;border:.5px solid var(--line);background:var(--surface);margin-bottom:16px')}>
+                      <Preview it={item} />
+                    </div>
+                    <div style={s('font-size:14px;font-weight:620;letter-spacing:-.01em;line-height:1.35;margin-bottom:16px')}>
+                      {item ? item.title : 'Nothing selected'}
+                    </div>
+                    <div style={s('display:flex;flex-direction:column;gap:10px;margin-bottom:16px')}>
+                      {[
+                        ['Type', item ? typeLabel(item.kind) : '—'],
+                        ['Source', item ? item.app : '—'],
+                        ['Copied', item ? exactTime(item.ts) : '—'],
+                        [meta.label, meta.value],
+                      ].map(([k, v]) => (
+                        <div key={k} style={s('display:flex;justify-content:space-between;font-size:12px')}>
+                          <span style={{ color: 'var(--text-3)' }}>{k}</span>
+                          <span style={{ color: 'var(--text-2)', fontWeight: 520 }}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {item?.secret && (
                   <>
@@ -326,12 +447,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                   Actions
                 </div>
                 <div style={s('display:flex;flex-direction:column;gap:7px')}>
-                  <ActionRow
-                    label="Copy to clipboard"
-                    iconPath="M4 6h16M4 12h10M4 18h7"
-                    onClick={() => item && void copy(item)}
-                  />
-                  {item && (item.kind === 'link' || item.kind === 'file' || item.kind === 'image') && (
+                  {!multi && item && (item.kind === 'link' || item.kind === 'file' || item.kind === 'image') && (
                     <ActionRow
                       label={item.kind === 'link' ? 'Open in browser' : 'Reveal in file manager'}
                       iconPath="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"
@@ -339,21 +455,18 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                     />
                   )}
                   <ActionRow
-                    label="Delete from history"
+                    label={multi ? 'Delete ' + marked.length + ' items' : 'Delete from history'}
                     iconPath="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"
-                    onClick={() => {
-                      if (!item) return
-                      void removeItem(item.id)
-                      fire('Deleted “' + item.title + '”')
-                    }}
+                    onClick={deleteMany}
+                    danger
                   />
                 </div>
 
                 <button
-                  onClick={() => item && void copy(item)}
+                  onClick={() => void copyMany()}
                   style={s('width:100%;margin-top:18px;border:0;cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:#fff;background:var(--accent);padding:11px;border-radius:10px;box-shadow:var(--shadow-sm)')}
                 >
-                  Copy to clipboard
+                  {multi ? 'Copy ' + marked.length + ' items' : 'Copy to clipboard'}
                 </button>
               </div>
             )}
@@ -405,17 +518,26 @@ function IconButton({
   )
 }
 
-function ActionRow({ label, iconPath, onClick }: { label: string; iconPath: string; onClick: () => void }) {
+function ActionRow({
+  label, iconPath, onClick, danger = false,
+}: {
+  label: string; iconPath: string; onClick: () => void; danger?: boolean
+}) {
+  const color = danger ? 'var(--red)' : 'var(--text)'
   return (
-    <div className="ai" onClick={onClick} style={s('display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;border:.5px solid var(--line);cursor:pointer;background:var(--surface)')}>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <button
+      className={danger ? 'ai danger' : 'ai'}
+      onClick={onClick}
+      style={{
+        ...s('display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:9px 12px;border-radius:9px;border:0;cursor:pointer;font:inherit;font-size:12.5px;font-weight:560;background:var(--surface-3)'),
+        color,
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d={iconPath} />
       </svg>
-      <span style={s('flex:1;font-size:12.5px;font-weight:520')}>{label}</span>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round">
-        <path d="M9 6l6 6-6 6" />
-      </svg>
-    </div>
+      {label}
+    </button>
   )
 }
 
@@ -506,9 +628,11 @@ function Grid({ items, onCopy }: { items: Item[]; onCopy: (it: Item) => void }) 
           <div
             style={{
               aspectRatio: '16/10',
-              background: it.kind === 'color' ? (it.value ?? undefined) : thumbUrl(it),
+              background: it.kind === 'color' ? (it.value ?? undefined) : undefined,
+              backgroundImage: it.kind === 'color' ? undefined : thumbUrl(it),
               backgroundSize: 'cover',
               backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
             }}
           />
           <div style={s('padding:10px 12px')}>
@@ -526,7 +650,7 @@ function Grid({ items, onCopy }: { items: Item[]; onCopy: (it: Item) => void }) 
 }
 
 /** ponytail: a "collection" is the app an item came from — real grouping, and no tagging UI to build. */
-function Collections({ items, onOpen }: { items: Item[]; onOpen: () => void }) {
+function Collections({ items, onOpen }: { items: Item[]; onOpen: (app: string) => void }) {
   const byApp = new Map<string, Item[]>()
   for (const it of items) {
     const bucket = byApp.get(it.app) ?? []
@@ -549,7 +673,7 @@ function Collections({ items, onOpen }: { items: Item[]; onOpen: () => void }) {
         const [bg, color] = TINTS[i % TINTS.length]
         const chips = [...new Set(group.map((g) => tintColor(g.kind)))].slice(0, 3)
         return (
-          <div key={app} onClick={onOpen} className="tile" style={s('border:.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;background:var(--surface)')}>
+          <div key={app} onClick={() => onOpen(app)} className="tile" style={s('border:.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;background:var(--surface)')}>
             <div style={s('display:flex;align-items:center;gap:11px;margin-bottom:14px')}>
               <div style={{ ...s('width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:14px;font-weight:700'), background: bg, color }}>
                 {app.slice(0, 1).toUpperCase()}
@@ -780,28 +904,34 @@ function SettingsPane({
 }: {
   settings: Settings; patch: (next: Partial<Settings>) => void
 }) {
-  const cycle = <T,>(values: readonly T[], current: T) =>
-    values[(values.indexOf(current) + 1) % values.length]
-
-  const groups: {
-    label: string
-    rows: { title: string; desc: string; toggle?: boolean; value?: string; onClick?: () => void }[]
-  }[] = [
+  const groups: { label: string; rows: { title: string; desc: string; control: ReactNode }[] }[] = [
     {
       label: 'General',
       rows: [
         {
           title: 'Launch at login',
           desc: 'Start Memory when you log in',
-          toggle: settings.launchAtLogin,
-          onClick: () => patch({ launchAtLogin: !settings.launchAtLogin }),
+          control: <Toggle on={settings.launchAtLogin} onChange={() => patch({ launchAtLogin: !settings.launchAtLogin })} />,
         },
-        { title: 'Global hotkey', desc: 'Open Quick Access', value: hotkeyLabel },
+        {
+          title: 'Global hotkey',
+          desc: 'Open Quick Access',
+          control: (
+            <span style={s('flex:none;font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:var(--text-2);background:var(--surface-3);padding:6px 11px;border-radius:8px')}>
+              {hotkeyLabel}
+            </span>
+          ),
+        },
         {
           title: 'History limit',
           desc: 'Items to retain',
-          value: settings.historyLimit,
-          onClick: () => patch({ historyLimit: cycle(HISTORY_LIMITS, settings.historyLimit) }),
+          control: (
+            <Segmented
+              options={HISTORY_LIMITS}
+              value={settings.historyLimit}
+              onChange={(historyLimit) => patch({ historyLimit })}
+            />
+          ),
         },
       ],
     },
@@ -811,14 +941,23 @@ function SettingsPane({
         {
           title: 'Ignore password managers',
           desc: 'Never capture from 1Password, Keychain',
-          toggle: settings.ignorePasswordManagers,
-          onClick: () => patch({ ignorePasswordManagers: !settings.ignorePasswordManagers }),
+          control: (
+            <Toggle
+              on={settings.ignorePasswordManagers}
+              onChange={() => patch({ ignorePasswordManagers: !settings.ignorePasswordManagers })}
+            />
+          ),
         },
         {
           title: 'Auto-clear sensitive',
           desc: 'Remove detected secrets after',
-          value: settings.autoClear,
-          onClick: () => patch({ autoClear: cycle(AUTO_CLEAR, settings.autoClear) }),
+          control: (
+            <Segmented
+              options={AUTO_CLEAR}
+              value={settings.autoClear}
+              onChange={(autoClear) => patch({ autoClear })}
+            />
+          ),
         },
       ],
     },
@@ -828,33 +967,48 @@ function SettingsPane({
         {
           title: 'Theme',
           desc: 'Match app to system or force one',
-          value: settings.theme[0].toUpperCase() + settings.theme.slice(1),
-          onClick: () => patch({ theme: cycle(['system', 'light', 'dark'] as const, settings.theme) }),
+          control: (
+            <Segmented
+              options={['System', 'Light', 'Dark']}
+              value={settings.theme[0].toUpperCase() + settings.theme.slice(1)}
+              onChange={(next) => patch({ theme: next.toLowerCase() as Settings['theme'] })}
+            />
+          ),
         },
         {
           title: 'Accent',
           desc: 'Selection & focus color',
-          value: ACCENT_NAMES[settings.accent] ?? settings.accent,
-          onClick: () => patch({ accent: cycle(ACCENTS, settings.accent) }),
+          control: (
+            <SwatchPicker
+              options={ACCENTS}
+              names={ACCENT_NAMES}
+              value={settings.accent}
+              onChange={(accent) => patch({ accent })}
+            />
+          ),
         },
         {
           title: 'Density',
           desc: 'Row height in lists',
-          value: settings.density,
-          onClick: () => patch({ density: cycle(['Comfortable', 'Compact'] as const, settings.density) }),
+          control: (
+            <Segmented
+              options={['Comfortable', 'Compact']}
+              value={settings.density}
+              onChange={(next) => patch({ density: next as Settings['density'] })}
+            />
+          ),
         },
         {
           title: 'Show counts',
           desc: 'Item counts beside segments and sections',
-          toggle: settings.showCounts,
-          onClick: () => patch({ showCounts: !settings.showCounts }),
+          control: <Toggle on={settings.showCounts} onChange={() => patch({ showCounts: !settings.showCounts })} />,
         },
       ],
     },
   ]
 
   return (
-    <div style={s('padding:20px;max-width:620px')}>
+    <div style={s('padding:20px;max-width:660px')}>
       {groups.map((grp) => (
         <div key={grp.label} style={{ marginBottom: 24 }}>
           <div style={s('font-size:12px;font-weight:660;letter-spacing:.02em;color:var(--text-2);margin-bottom:9px;padding-left:2px')}>
@@ -869,37 +1023,11 @@ function SettingsPane({
                   borderBottom: i === grp.rows.length - 1 ? '0' : '.5px solid var(--line)',
                 }}
               >
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={s('font-size:13.5px;font-weight:520')}>{row.title}</div>
                   <div style={s('font-size:11.5px;color:var(--text-3);margin-top:2px')}>{row.desc}</div>
                 </div>
-                {row.toggle !== undefined ? (
-                  <div
-                    onClick={row.onClick}
-                    style={{
-                      ...s('width:40px;height:24px;border-radius:20px;padding:2px;cursor:pointer;transition:background .2s ease;display:flex'),
-                      background: row.toggle ? 'var(--accent)' : 'var(--surface-3)',
-                      justifyContent: row.toggle ? 'flex-end' : 'flex-start',
-                    }}
-                  >
-                    <div style={s('width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:all .2s ease')} />
-                  </div>
-                ) : (
-                  <div
-                    onClick={row.onClick}
-                    style={{
-                      ...s('display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);font-weight:520;background:var(--surface-3);padding:5px 11px;border-radius:8px'),
-                      cursor: row.onClick ? 'pointer' : 'default',
-                    }}
-                  >
-                    {row.value}
-                    {row.onClick && (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round">
-                        <path d="M6 9l6 6 6-6" />
-                      </svg>
-                    )}
-                  </div>
-                )}
+                {row.control}
               </div>
             ))}
           </div>

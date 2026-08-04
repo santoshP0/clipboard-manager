@@ -26,8 +26,8 @@ export function IconBox({
 }: {
   it: Item; size: number; radius: number; icon: number; border?: boolean
 }) {
-  const fill =
-    it.kind === 'color' ? it.value ?? undefined : it.kind === 'image' ? thumbUrl(it) : undefined
+  const swatch = it.kind === 'color' ? it.value ?? undefined : undefined
+  const image = it.kind === 'image' ? thumbUrl(it) : undefined
 
   return (
     <div
@@ -44,8 +44,18 @@ export function IconBox({
         ...(border ? { border: '.5px solid var(--line-2)' } : null),
       }}
     >
-      {fill ? (
-        <div style={{ width: '100%', height: '100%', background: fill, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+      {swatch || image ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            background: swatch,
+            backgroundImage: image,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        />
       ) : (
         <svg
           width={icon} height={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -102,9 +112,11 @@ export function Preview({ it }: { it?: Item }) {
       <div
         style={{
           height: 140,
-          background: thumbUrl(it),
-          backgroundSize: 'cover',
+          backgroundImage: thumbUrl(it),
+          backgroundSize: 'contain',
           backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: 'var(--surface-2)',
         }}
       />
     )
@@ -246,6 +258,135 @@ export function LoadingRows() {
         <div style={s('width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite')} />
         Loading history…
       </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * settings controls
+ * ------------------------------------------------------------------ */
+
+/** Multi-option switch: every choice visible, current one raised. */
+export function Segmented({
+  options, value, onChange,
+}: {
+  options: readonly string[]; value: string; onChange: (next: string) => void
+}) {
+  return (
+    <div style={s('flex:none;display:flex;gap:2px;background:var(--surface-3);padding:3px;border-radius:9px')}>
+      {options.map((option) => {
+        const on = option === value
+        return (
+          <button
+            key={option}
+            onClick={() => onChange(option)}
+            style={{
+              ...s('border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:560;padding:5px 10px;border-radius:6.5px;white-space:nowrap;transition:all .18s ease'),
+              color: on ? 'var(--text)' : 'var(--text-2)',
+              background: on ? 'var(--surface)' : 'transparent',
+              boxShadow: on ? 'var(--shadow-sm)' : 'none',
+            }}
+          >
+            {option}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Same switch, but the choices are the colours themselves. */
+export function SwatchPicker({
+  options, value, onChange, names,
+}: {
+  options: readonly string[]
+  value: string
+  onChange: (next: string) => void
+  names: Record<string, string>
+}) {
+  return (
+    <div style={s('flex:none;display:flex;gap:4px;background:var(--surface-3);padding:4px;border-radius:9px')}>
+      {options.map((color) => {
+        const on = color === value
+        return (
+          <button
+            key={color}
+            title={names[color] ?? color}
+            onClick={() => onChange(color)}
+            style={{
+              width: 18,
+              height: 18,
+              padding: 0,
+              border: 0,
+              borderRadius: '50%',
+              cursor: 'pointer',
+              background: color,
+              transition: 'box-shadow .18s ease',
+              boxShadow: on ? '0 0 0 2px var(--surface-3), 0 0 0 3.5px ' + color : 'none',
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+export function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
+  return (
+    <div
+      onClick={onChange}
+      style={{
+        ...s('flex:none;width:40px;height:24px;border-radius:20px;padding:2px;cursor:pointer;transition:background .2s ease;display:flex'),
+        background: on ? 'var(--accent)' : 'var(--surface-3)',
+        justifyContent: on ? 'flex-end' : 'flex-start',
+      }}
+    >
+      <div style={s('width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:all .2s ease')} />
+    </div>
+  )
+}
+
+/** Finder's multi-selection look: the picked items fanned out as a stack. */
+export function StackPreview({ items }: { items: Item[] }) {
+  const shown = items.slice(0, 4)
+  const angles = [10, -7, 4, -12]
+
+  return (
+    <div style={s('position:relative;height:150px;display:grid;place-items:center;margin-bottom:14px')}>
+      {shown.map((it, i) => {
+        const image = it.kind === 'image' ? thumbUrl(it) : undefined
+        // Last drawn sits on top and straightest, like a dropped pile.
+        const depth = shown.length - 1 - i
+        return (
+          <div
+            key={it.id}
+            style={{
+              position: 'absolute',
+              width: 116,
+              height: 84,
+              borderRadius: 8,
+              overflow: 'hidden',
+              display: 'grid',
+              placeItems: 'center',
+              border: '.5px solid var(--line)',
+              background: it.kind === 'color' ? (it.value ?? undefined) : 'var(--surface)',
+              backgroundImage: image,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              boxShadow: 'var(--shadow-sm)',
+              transform: `rotate(${angles[depth % angles.length]}deg) translate(${depth * -4}px, ${depth * -3}px)`,
+              zIndex: i,
+            }}
+          >
+            {!image && it.kind !== 'color' && (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={tintColor(it.kind)} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d={iconPath(it.kind)} />
+              </svg>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

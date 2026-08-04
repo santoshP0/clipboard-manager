@@ -114,6 +114,8 @@ struct AppState {
     store: Mutex<Store>,
     /// Hash of the clipboard content we last saw (or wrote ourselves).
     seen: Mutex<u64>,
+    /// Ignore the clipboard until this timestamp (ms) — used after we write it.
+    suppress_until: Mutex<u64>,
 }
 
 /* ------------------------------------------------------------------ *
@@ -384,6 +386,9 @@ fn watch_clipboard(app: AppHandle) {
         if state.store.lock().unwrap().settings.paused {
             continue;
         }
+        if now_ms() < *state.suppress_until.lock().unwrap() {
+            continue;
+        }
 
         let text = app.clipboard().read_text().ok().filter(|t| !t.trim().is_empty());
         let captured = match text {
@@ -519,6 +524,19 @@ fn copy_item(app: AppHandle, state: State<AppState>, id: u64) -> Option<String> 
     let (payload, title) = {
         let store = state.store.lock().unwrap();
         let item = store.items.iter().find(|i| i.id == id)?;
+
+        // Images go back as pixels, not as the path we happen to store them at.
+        if item.kind == "image" {
+            if let Some(path) = item.path.clone() {
+                let title = item.title.clone();
+                drop(store);
+                if write_clipboard_image(&app, &state, &path) {
+                    return Some(title);
+                }
+                return None;
+            }
+        }
+
         let payload = item
             .body
             .clone()
@@ -535,6 +553,57 @@ fn copy_item(app: AppHandle, state: State<AppState>, id: u64) -> Option<String> 
 #[tauri::command]
 fn copy_text(app: AppHandle, state: State<AppState>, text: String) {
     write_clipboard(&app, &state, &text);
+}
+
+/// Put a stored PNG back on the clipboard as an image.
+fn write_clipboard_image(app: &AppHandle, state: &State<AppState>, path: &str) -> bool {
+    let Ok(decoded) = image::open(path) else {
+        return false;
+    };
+    let rgba = decoded.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let bytes = rgba.into_raw();
+    // Same hash shape the watcher computes, so we don't re-capture our own write.
+    *state.seen.lock().unwrap() = hash(&bytes);
+    app.clipboard()
+        .write_image(&tauri::image::Image::new_owned(bytes, width, height))
+        .is_ok()
+}
+
+/// Put files themselves on the clipboard, so pasting attaches them.
+#[tauri::command]
+fn copy_files(state: State<AppState>, paths: Vec<String>) -> bool {
+    if paths.is_empty() {
+        return false;
+    }
+    // A control character (\r, \t, NUL...) would terminate the AppleScript string
+    // literal and let a crafted filename inject script. Quote-escaping alone
+    // doesn't cover it, so refuse those paths outright.
+    if paths
+        .iter()
+        .any(|p| p.is_empty() || p.chars().any(char::is_control))
+    {
+        return false;
+    }
+    *state.suppress_until.lock().unwrap() = now_ms() + 2500;
+
+    // ponytail: AppleScript is the only no-dependency way to put a file list on
+    // the pasteboard; the clipboard plugin only speaks text and images.
+    #[cfg(target_os = "macos")]
+    {
+        let list = paths
+            .iter()
+            .map(|p| format!("POSIX file \"{}\"", p.replace('\\', "\\\\").replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return std::process::Command::new("osascript")
+            .args(["-e", &format!("set the clipboard to {{{list}}}")])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
 }
 
 /// Write to the clipboard without capturing what we just wrote.
@@ -803,6 +872,7 @@ fn main() {
             snapshot,
             copy_item,
             copy_text,
+            copy_files,
             toggle_pin,
             toggle_fav,
             remove_item,
@@ -837,6 +907,7 @@ fn main() {
                 dir,
                 store: Mutex::new(store),
                 seen: Mutex::new(0),
+                suppress_until: Mutex::new(0),
             });
 
             app.global_shortcut().register(shortcut)?;

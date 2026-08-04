@@ -1,7 +1,8 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { LogicalSize } from '@tauri-apps/api/dpi'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import { DEFAULT_SETTINGS, type Item, type Settings, type Store } from './lib'
 
@@ -55,6 +56,7 @@ export function useToast() {
 
 export const copyItem = (id: number) => invoke<string | null>('copy_item', { id })
 export const copyText = (text: string) => invoke('copy_text', { text })
+export const copyFiles = (paths: string[]) => invoke<boolean>('copy_files', { paths })
 export const togglePin = (id: number) => invoke('toggle_pin', { id })
 export const toggleFav = (id: number) => invoke('toggle_fav', { id })
 export const removeItem = (id: number) => invoke('remove_item', { id })
@@ -83,3 +85,25 @@ export const hideSelf = () => win.hide()
 
 /** Image items live on disk; the asset protocol makes them loadable. */
 export const thumbUrl = (it: Item) => (it.path ? `url("${convertFileSrc(it.path)}")` : undefined)
+
+/** Shrink-wrap the window around its panel, so macOS can draw the real shadow. */
+export function useFitWindow(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let applied = ''
+    const fit = () => {
+      const width = Math.ceil(el.offsetWidth)
+      const height = Math.ceil(el.offsetHeight)
+      if (!width || !height) return
+      const next = `${width}x${height}`
+      if (next === applied) return
+      applied = next
+      void win.setSize(new LogicalSize(width, height))
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref])
+}
