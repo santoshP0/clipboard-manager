@@ -38,7 +38,7 @@ export default function App() {
   const layout: Record<string, string> = {
     quick: 'display:flex;align-items:center;justify-content:center;padding:20px',
     menu: 'display:flex;align-items:flex-start;justify-content:center;padding:10px 16px 20px',
-    main: 'padding:8px',
+    main: 'padding:0',
   }
 
   return (

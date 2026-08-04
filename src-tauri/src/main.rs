@@ -652,6 +652,11 @@ fn remove_snippet(app: AppHandle, state: State<AppState>, id: u64) {
 
 #[tauri::command]
 fn show_main(app: AppHandle, section: Option<String>) {
+    // Closing the window only hides it, which on macOS can leave the whole app
+    // hidden — un-hide it first or show()/set_focus() land on nothing.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.unminimize();
@@ -839,6 +844,13 @@ fn main() {
             watch_clipboard(handle);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Memory");
+        .build(tauri::generate_context!())
+        .expect("error while building Memory")
+        .run(|_app, _event| {
+            // Clicking the Dock icon after the window was closed reopens it.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main(_app.clone(), None);
+            }
+        });
 }

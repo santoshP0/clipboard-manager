@@ -19,10 +19,13 @@
         "height": 720,
         "minWidth": 860,
         "minHeight": 520,
-        "decorations": false,
-        "transparent": true,
+        "decorations": true,
+        "transparent": false,
         "center": true,
-        "visible": true
+        "visible": true,
+        "shadow": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       },
       {
         "label": "quick",
@@ -36,7 +39,8 @@
         "skipTaskbar": true,
         "center": true,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "shadow": false
       },
       {
         "label": "menu",
@@ -49,14 +53,17 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "shadow": false
       }
     ],
     "security": {
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**"]
+        "scope": [
+          "$APPDATA/**"
+        ]
       }
     }
   },

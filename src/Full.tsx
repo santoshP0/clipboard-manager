@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import {
   addSnippet, copyItem, isMac, openPath, removeItem, removeSnippet, saveSettings, thumbUrl,
-  toggleFav, togglePin, runSnippet, useGoto, win, type Loaded,
+  toggleFav, togglePin, runSnippet, useGoto, type Loaded,
 } from './api'
 import {
   ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, PIN_PATH, SEL_BAR, dayBucket,
@@ -119,7 +119,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
   }, [item, fire])
 
   return (
-    <div style={s('height:100%;display:flex;flex-direction:column;background:var(--surface);border:.5px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden')}>
+    <div style={s('height:100%;display:flex;flex-direction:column;background:var(--surface);overflow:hidden')}>
       <TitleBar section={section} />
 
       <div style={s('flex:1;display:flex;min-height:0')}>
@@ -374,43 +374,17 @@ function TitleBar({ section }: { section: string }) {
       data-tauri-drag-region
       style={s('height:44px;flex:none;display:flex;align-items:center;padding:0 14px;background:var(--glass);backdrop-filter:blur(30px);border-bottom:.5px solid var(--line);position:relative')}
     >
-      {isMac && (
-        <div style={s('display:flex;gap:8px')}>
-          <Dot color="#ff5f57" onClick={() => void win.close()} />
-          <Dot color="#febc2e" onClick={() => void win.minimize()} />
-          <Dot color="#28c840" onClick={() => void win.toggleMaximize()} />
-        </div>
-      )}
+      {/* Space for the native traffic lights, which sit over this bar. */}
+      {isMac && <div style={{ width: 70, flex: 'none' }} />}
       <div
         data-tauri-drag-region
         style={s('position:absolute;left:50%;transform:translateX(-50%);font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--text)')}
       >
         {section}
       </div>
-      <div style={s('margin-left:auto;display:flex;align-items:center;gap:6px')}>
-        {!isMac && (
-          <div style={s('display:flex;align-items:center;gap:0;margin-right:-6px')}>
-            <div className="wbtn" onClick={() => void win.minimize()} style={s('width:44px;height:44px;display:grid;place-items:center;cursor:pointer')}>
-              <div style={s('width:11px;height:1px;background:var(--text-2)')} />
-            </div>
-            <div className="wbtn" onClick={() => void win.toggleMaximize()} style={s('width:44px;height:44px;display:grid;place-items:center;cursor:pointer')}>
-              <div style={s('width:10px;height:10px;border:1px solid var(--text-2)')} />
-            </div>
-            <div className="wclose" onClick={() => void win.close()} style={s('width:44px;height:44px;display:grid;place-items:center;cursor:pointer;color:var(--text-2)')}>
-              <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.1">
-                <path d="M1 1l10 10M11 1L1 11" />
-              </svg>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
-
-const Dot = ({ color, onClick }: { color: string; onClick: () => void }) => (
-  <div onClick={onClick} style={{ width: 12, height: 12, borderRadius: '50%', background: color, cursor: 'pointer' }} />
-)
 
 function IconButton({
   onClick, path, active, color,
