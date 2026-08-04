@@ -50,6 +50,7 @@ export type Item = {
   url?: string | null
   value?: string | null
   path?: string | null
+  thumb?: string | null
   dims?: string | null
   size?: string | null
   lang?: string | null
@@ -219,17 +220,20 @@ export function humanSize(bytes: number): string {
 
 const SEG_KIND: Record<string, Kind> = { Images: 'image', Code: 'code', Files: 'file', Links: 'link' }
 
+/** Pinned items ride at the top of every list; the rest stay newest-first. */
+const pinnedFirst = (items: Item[]): Item[] =>
+  [...items].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.ts - a.ts)
+
 export function segFilter(items: Item[], seg: string): Item[] {
-  if (seg === 'Recent') return items
-  if (seg === 'Pinned') return items.filter((x) => x.pinned)
-  if (seg === 'Collections') return items
-  return items.filter((x) => x.kind === SEG_KIND[seg])
+  if (seg === 'Recent' || seg === 'Collections') return pinnedFirst(items)
+  if (seg === 'Pinned') return pinnedFirst(items.filter((x) => x.pinned))
+  return pinnedFirst(items.filter((x) => x.kind === SEG_KIND[seg]))
 }
 
 export function sectionFilter(items: Item[], section: string): Item[] {
-  if (section === 'Favorites') return items.filter((x) => x.fav)
+  if (section === 'Favorites') return pinnedFirst(items.filter((x) => x.fav))
   const kind = SEG_KIND[section]
-  return kind ? items.filter((x) => x.kind === kind) : items
+  return pinnedFirst(kind ? items.filter((x) => x.kind === kind) : items)
 }
 
 /* ------------------------------------------------------------------ *

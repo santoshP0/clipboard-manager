@@ -48,6 +48,10 @@ struct Item {
     /// Content hash, so a restart doesn't re-capture what's already on top.
     #[serde(default)]
     hash: u64,
+    /// Preview PNG in app data. Equals `path` for clipboard-captured images;
+    /// for a file copied in Finder, `path` stays the original file.
+    #[serde(default)]
+    thumb: Option<String>,
     app: String,
     ts: u64,
     pinned: bool,
@@ -116,6 +120,8 @@ struct AppState {
     seen: Mutex<u64>,
     /// Ignore the clipboard until this timestamp (ms) — used after we write it.
     suppress_until: Mutex<u64>,
+    /// Earliest time (ms) we may shell out to read a file URL again.
+    file_check: Mutex<u64>,
 }
 
 /* ------------------------------------------------------------------ *
@@ -197,6 +203,87 @@ fn frontmost_app() -> String {
         }
     }
     "Unknown".into()
+}
+
+const IMAGE_EXTS: [&str; 8] = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
+
+/// Path of a file copied in Finder, which lands on the pasteboard as a file URL
+/// alongside a text flavour holding only the name.
+fn clipboard_file() -> Option<String> {
+    // ponytail: AppleScript reads one file URL; multi-file copies capture the
+    // first. Widen only if someone actually copies batches from Finder.
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("osascript")
+            .args(["-e", "POSIX path of (the clipboard as \u{ab}class furl\u{bb})"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if path.is_empty() || !std::path::Path::new(&path).exists() {
+            return None;
+        }
+        return Some(path);
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
+/// Build an item for a file on disk, previewing it when it is an image.
+fn file_item(id: u64, path: &str, app_name: String, dir: &PathBuf) -> Item {
+    let p = PathBuf::from(path);
+    let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+    let ext = p
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let title = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string());
+
+    let mut item = Item {
+        id,
+        kind: "file".into(),
+        title,
+        body: None,
+        url: None,
+        value: None,
+        path: Some(path.to_string()),
+        dims: None,
+        size: Some(human_size(size)),
+        lang: None,
+        bytes: size,
+        hash: hash(&path.to_string()),
+        thumb: None,
+        app: app_name,
+        ts: now_ms(),
+        pinned: false,
+        fav: false,
+        secret: false,
+    };
+
+    if IMAGE_EXTS.contains(&ext.as_str()) {
+        if let Ok(decoded) = image::open(&p) {
+            let (w, h) = (decoded.width(), decoded.height());
+            let preview = if w > MAX_IMAGE_WIDTH {
+                decoded.thumbnail(MAX_IMAGE_WIDTH, h * MAX_IMAGE_WIDTH / w)
+            } else {
+                decoded
+            };
+            let thumbs = dir.join("images");
+            let _ = std::fs::create_dir_all(&thumbs);
+            let thumb_path = thumbs.join(format!("{id}.png"));
+            if preview.save(&thumb_path).is_ok() {
+                item.kind = "image".into();
+                item.dims = Some(format!("{w} \u{d7} {h}"));
+                item.thumb = Some(thumb_path.to_string_lossy().to_string());
+            }
+        }
+    }
+    item
 }
 
 const PASSWORD_MANAGERS: [&str; 6] = [
@@ -288,6 +375,7 @@ fn text_item(id: u64, text: &str, app_name: String) -> Item {
         lang: None,
         bytes: text.len() as u64,
         hash: hash(&text.to_string()),
+        thumb: None,
         app: app_name,
         ts: now_ms(),
         pinned: false,
@@ -393,7 +481,8 @@ fn watch_clipboard(app: AppHandle) {
         let text = app.clipboard().read_text().ok().filter(|t| !t.trim().is_empty());
         let captured = match text {
             Some(text) => capture_text(&app, &state, text),
-            None => capture_image(&app, &state),
+            // No text flavour: an image on the pasteboard, or a file URL alone.
+            None => capture_image(&app, &state) || capture_file(&app, &state),
         };
 
         let mut changed = captured;
@@ -420,6 +509,7 @@ fn capture_text(app: &AppHandle, state: &State<AppState>, text: String) -> bool 
     }
 
     let source = frontmost_app();
+    let file = clipboard_file();
     let mut store = state.store.lock().unwrap();
     if store.settings.ignore_password_managers
         && PASSWORD_MANAGERS.iter().any(|p| source.contains(p))
@@ -430,10 +520,53 @@ fn capture_text(app: &AppHandle, state: &State<AppState>, text: String) -> bool 
         return false;
     }
     store.next_id += 1;
-    let item = text_item(store.next_id, &text, source);
+    let item = match file {
+        Some(path) => file_item(store.next_id, &path, source, &state.dir),
+        None => text_item(store.next_id, &text, source),
+    };
+    if store.items.first().is_some_and(|i| i.hash == item.hash) {
+        store.next_id -= 1;
+        return false;
+    }
     store.items.insert(0, item);
     drop(store);
     let _ = app; // keep signature symmetrical with capture_image
+    true
+}
+
+/// Pick up a file URL sitting on the pasteboard without any text flavour.
+fn capture_file(_app: &AppHandle, state: &State<AppState>) -> bool {
+    // Reading it means shelling out to osascript, so poll it far less often
+    // than the clipboard itself.
+    {
+        let mut next = state.file_check.lock().unwrap();
+        let now = now_ms();
+        if now < *next {
+            return false;
+        }
+        *next = now + 2000;
+    }
+
+    let Some(path) = clipboard_file() else {
+        return false;
+    };
+    let h = hash(&path);
+    {
+        let mut seen = state.seen.lock().unwrap();
+        if *seen == h {
+            return false;
+        }
+        *seen = h;
+    }
+
+    let source = frontmost_app();
+    let mut store = state.store.lock().unwrap();
+    if store.items.first().is_some_and(|i| i.hash == h) {
+        return false;
+    }
+    store.next_id += 1;
+    let item = file_item(store.next_id, &path, source, &state.dir);
+    store.items.insert(0, item);
     true
 }
 
@@ -499,6 +632,7 @@ fn capture_image(app: &AppHandle, state: &State<AppState>) -> bool {
             lang: None,
             bytes: size,
             hash: digest,
+            thumb: Some(path.to_string_lossy().to_string()),
             app: source,
             ts: now_ms(),
             pinned: false,
@@ -525,11 +659,17 @@ fn copy_item(app: AppHandle, state: State<AppState>, id: u64) -> Option<String> 
         let store = state.store.lock().unwrap();
         let item = store.items.iter().find(|i| i.id == id)?;
 
-        // Images go back as pixels, not as the path we happen to store them at.
+        // Images go back as pixels, not as the path we happen to store them at —
+        // unless the item is a real file on disk, where handing over the file
+        // preserves the original encoding (an animated GIF, say).
         if item.kind == "image" {
             if let Some(path) = item.path.clone() {
                 let title = item.title.clone();
+                let backed_by_file = item.thumb.as_deref() != Some(path.as_str());
                 drop(store);
+                if backed_by_file && copy_files(state.clone(), vec![path.clone()]) {
+                    return Some(title);
+                }
                 if write_clipboard_image(&app, &state, &path) {
                     return Some(title);
                 }
@@ -908,6 +1048,7 @@ fn main() {
                 store: Mutex::new(store),
                 seen: Mutex::new(0),
                 suppress_until: Mutex::new(0),
+                file_check: Mutex::new(0),
             });
 
             app.global_shortcut().register(shortcut)?;

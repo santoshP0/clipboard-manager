@@ -84,7 +84,12 @@ export function useGoto(onGoto: (section: string) => void) {
 export const hideSelf = () => win.hide()
 
 /** Image items live on disk; the asset protocol makes them loadable. */
-export const thumbUrl = (it: Item) => (it.path ? `url("${convertFileSrc(it.path)}")` : undefined)
+export const thumbUrl = (it: Item) => {
+  // Finder-copied images keep `path` on the original file, which the asset
+  // protocol can't read; `thumb` is the preview we wrote into app data.
+  const src = it.thumb ?? it.path
+  return src ? `url("${convertFileSrc(src)}")` : undefined
+}
 
 /** Shrink-wrap the window around its panel, so macOS can draw the real shadow. */
 export function useFitWindow(ref: RefObject<HTMLElement | null>) {
