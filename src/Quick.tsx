@@ -4,11 +4,13 @@ import {
   copyItem, hideSelf, isMac, removeItem, togglePin, useFitWindow, useQuickOpen, type Loaded,
 } from './api'
 import {
-  PIN_PATH, SEL_BAR, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, typeLabel,
+  PIN_PATH, SEL_BAR, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, tintColor,
+  typeLabel,
 } from './lib'
 import {
   EmptyClipboard, IconBox, KeyHint, LoadingRows, NoMatches, Preview, SearchIcon,
 } from './ui'
+import { dissolveElement } from './dissolve'
 
 const SEG_NAMES = ['Recent', 'Pinned', 'Images', 'Code', 'Files', 'Links', 'Collections']
 
@@ -76,6 +78,8 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
         fire((it.pinned ? 'Unpinned “' : 'Pinned “') + it.title + '”')
       } else if (mod && (e.key === 'Backspace' || e.key === 'Delete') && it) {
         e.preventDefault()
+        const row = document.querySelector<HTMLElement>(`[data-row="${it.id}"]`)
+        if (row) dissolveElement(row, ['var(--text)', tintColor(it.kind), '#ffffff'])
         void removeItem(it.id)
         fire('Deleted “' + it.title + '”')
       } else if (mod && /^[1-7]$/.test(e.key)) {
@@ -153,6 +157,7 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
               list.map((it, i) => (
                 <div
                   key={it.id}
+                  data-row={it.id}
                   data-sel={i === sel ? '1' : '0'}
                   onClick={() => setSel(i)}
                   onDoubleClick={copyAndClose}

@@ -6,6 +6,7 @@ import Menu from './Menu'
 import Quick from './Quick'
 import { hexA, s } from './lib'
 import { ErrorState } from './ui'
+import { DissolveLayer } from './dissolve'
 
 /** Resolves settings.theme, following the OS when it says "system". */
 function useTheme(preference: string) {
@@ -61,6 +62,8 @@ export default function App() {
       ) : (
         <Full loaded={loaded} fire={fire} />
       )}
+
+      <DissolveLayer />
 
       {toast && (
         <div style={s('position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:80;display:flex;align-items:center;gap:10px;padding:11px 18px;background:var(--glass);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);border:.5px solid var(--line);border-radius:12px;box-shadow:var(--shadow);animation:toastIn .2s cubic-bezier(.32,.72,0,1)')}>

@@ -13,6 +13,8 @@ import {
   EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon, Segmented, StackPreview,
   SwatchPicker, Toggle,
 } from './ui'
+import { dissolveElement } from './dissolve'
+import FlameWrap from './flame-wrap'
 
 const NAV_GROUPS: { label: string; items: [string, string][] }[] = [
   {
@@ -139,6 +141,8 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
   }
   const meta = metaFor(item)
   const rowPad = settings.density === 'Compact' ? '7px 12px' : '11px 12px'
+  const canOpen =
+    !multi && !!item && (item.kind === 'link' || item.kind === 'file' || item.kind === 'image')
 
   const patch = (next: Partial<Settings>) => void saveSettings({ ...settings, ...next })
 
@@ -171,6 +175,11 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
 
   const deleteMany = () => {
     if (!targets.length) return
+    // Scatter the rows before the store drops them.
+    for (const t of targets) {
+      const row = document.querySelector<HTMLElement>(`[data-row="${t.id}"]`)
+      if (row) dissolveElement(row, ['var(--text)', tintColor(t.kind), '#ffffff'])
+    }
     targets.forEach((t) => void removeItem(t.id))
     fire(targets.length === 1 ? 'Deleted “' + targets[0].title + '”' : 'Deleted ' + targets.length + ' items')
     clearSel()
@@ -290,6 +299,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                     {list.map((it, i) => (
                       <div
                         key={it.id}
+                        data-row={it.id}
                         onClick={(e) => pick(e, it, i)}
                         onDoubleClick={() => void copy(it)}
                         className={'row' + (isSelected(it, i) ? ' sel' : '')}
@@ -350,7 +360,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
 
             {/* inspector */}
             {mode === 'list' && list.length > 0 && (
-              <div className="mem-scroll" style={s('width:300px;flex:none;border-left:.5px solid var(--line);background:var(--glass-2);overflow-y:auto;padding:20px')}>
+              <div className="mem-scroll" style={s('width:300px;flex:none;border-left:.5px solid var(--line);background:var(--glass-2);overflow-y:auto;overflow-x:hidden;padding:20px;display:flex;flex-direction:column')}>
                 <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px')}>
                   <div style={s('font-size:11px;font-weight:660;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)')}>
                     {multi ? marked.length + ' selected' : 'Inspector'}
@@ -443,24 +453,20 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                   </>
                 )}
 
-                <div style={s('font-size:11px;font-weight:640;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px')}>
-                  Actions
-                </div>
-                <div style={s('display:flex;flex-direction:column;gap:7px')}>
-                  {!multi && item && (item.kind === 'link' || item.kind === 'file' || item.kind === 'image') && (
-                    <ActionRow
-                      label={item.kind === 'link' ? 'Open in browser' : 'Reveal in file manager'}
-                      iconPath="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"
-                      onClick={() => void openPath((item.url || item.path) as string)}
-                    />
-                  )}
-                  <ActionRow
-                    label={multi ? 'Delete ' + marked.length + ' items' : 'Delete from history'}
-                    iconPath="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"
-                    onClick={deleteMany}
-                    danger
-                  />
-                </div>
+                {canOpen && (
+                  <>
+                    <div style={s('font-size:11px;font-weight:640;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px')}>
+                      Actions
+                    </div>
+                    <div style={s('display:flex;flex-direction:column;gap:7px')}>
+                      <ActionRow
+                        label={item.kind === 'link' ? 'Open in browser' : 'Reveal in file manager'}
+                        iconPath="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"
+                        onClick={() => void openPath((item.url || item.path) as string)}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <button
                   onClick={() => void copyMany()}
@@ -468,6 +474,34 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                 >
                   {multi ? 'Copy ' + marked.length + ' items' : 'Copy to clipboard'}
                 </button>
+
+                {/* Pinned to the bottom of the panel, far from the primary
+                    action, so a mis-aimed click on Copy can't land on Delete. */}
+                <div style={s('margin-top:auto;padding-top:26px')}>
+                  <div style={s('height:.5px;background:var(--line);margin-bottom:16px')} />
+                  <FlameWrap
+                    color={[1, 0.22, 0.06]}
+                    intensity={0.55}
+                    height={46}
+                    spread={9}
+                    radius={9}
+                    speed={0.35}
+                    melt={2}
+                    sparks={1.2}
+                    sparkSize={0.3}
+                    smoke={0.5}
+                    rim={2}
+                    ember={0}
+                    scorch={0}
+                  >
+                    <ActionRow
+                      label={multi ? 'Delete ' + marked.length + ' items' : 'Delete from history'}
+                      iconPath="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"
+                      onClick={deleteMany}
+                      danger
+                    />
+                  </FlameWrap>
+                </div>
               </div>
             )}
           </div>
