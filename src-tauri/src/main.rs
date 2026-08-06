@@ -3,6 +3,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -13,6 +14,10 @@ use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+/// Only the tray's Quit may actually terminate; every other exit request
+/// (Dock menu, ⌘Q) just puts the app back in the menu bar.
+static ALLOW_EXIT: AtomicBool = AtomicBool::new(false);
 
 const POLL: Duration = Duration::from_millis(600);
 const MAX_IMAGE_WIDTH: u32 = 1280;
@@ -144,6 +149,20 @@ fn save(dir: &PathBuf, store: &Store) {
     let _ = std::fs::create_dir_all(dir);
     if let Ok(json) = serde_json::to_string(store) {
         let _ = std::fs::write(store_path(dir), json);
+    }
+}
+
+/// Show or hide the Dock icon. Regular while the window is up, Accessory once
+/// it is closed, so the app keeps living in the menu bar.
+#[allow(unused_variables)]
+fn set_dock_visible(app: &AppHandle, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        });
     }
 }
 
@@ -865,6 +884,7 @@ fn show_main(app: AppHandle, section: Option<String>) {
     // hidden — un-hide it first or show()/set_focus() land on nothing.
     #[cfg(target_os = "macos")]
     let _ = app.show();
+    set_dock_visible(&app, true);
 
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -904,6 +924,7 @@ fn open_path(path: String) {
 
 #[tauri::command]
 fn quit(app: AppHandle) {
+    ALLOW_EXIT.store(true, Ordering::SeqCst);
     app.exit(0);
 }
 
@@ -946,7 +967,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main(app.clone(), None),
-            "quit" => app.exit(0),
+            "quit" => {
+                ALLOW_EXIT.store(true, Ordering::SeqCst);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -1035,6 +1059,7 @@ fn main() {
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 api.prevent_close();
                 let _ = window.hide();
+                set_dock_visible(window.app_handle(), false);
             }
             _ => {}
         })
@@ -1051,10 +1076,8 @@ fn main() {
                 file_check: Mutex::new(0),
             });
 
-            // Menu-bar app: no Dock icon and no app menu, so the only way to
-            // quit is the tray popover — the Dock's Quit can't reach us.
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // The main window is up at launch, so claim a Dock icon to match.
+            set_dock_visible(&handle, true);
 
             app.global_shortcut().register(shortcut)?;
             setup_tray(&handle)?;
@@ -1063,11 +1086,22 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Memory")
-        .run(|_app, _event| {
-            // Clicking the Dock icon after the window was closed reopens it.
+        .run(|_app, _event| match _event {
+            // Clicking the Dock icon reopens the window.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                show_main(_app.clone(), None);
+            tauri::RunEvent::Reopen { .. } => show_main(_app.clone(), None),
+
+            // Dock's Quit and ⌘Q only put the app away; the tray's Quit sets
+            // ALLOW_EXIT first and is the one route that really terminates.
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                if !ALLOW_EXIT.load(Ordering::SeqCst) {
+                    api.prevent_exit();
+                    if let Some(win) = _app.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
+                    set_dock_visible(_app, false);
+                }
             }
+            _ => {}
         });
 }

@@ -5,6 +5,7 @@ import { label, useStore, useToast } from './api'
 import Full from './Full'
 import Menu from './Menu'
 import Quick from './Quick'
+import Splash from './Splash'
 import { hexA, s } from './lib'
 import { ErrorState } from './ui'
 
@@ -60,7 +61,10 @@ export default function App() {
       ) : label === 'menu' ? (
         <Menu loaded={loaded} />
       ) : (
-        <Full loaded={loaded} fire={fire} />
+        <>
+          <Full loaded={loaded} fire={fire} />
+          <Splash ready={loaded.state !== 'loading'} />
+        </>
       )}
 
       {/* Portalled to the body so panel layout changes — the inspector
