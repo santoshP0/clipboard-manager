@@ -1051,6 +1051,11 @@ fn main() {
                 file_check: Mutex::new(0),
             });
 
+            // Menu-bar app: no Dock icon and no app menu, so the only way to
+            // quit is the tray popover — the Dock's Quit can't reach us.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             app.global_shortcut().register(shortcut)?;
             setup_tray(&handle)?;
             watch_clipboard(handle);
