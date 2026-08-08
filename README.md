@@ -12,7 +12,8 @@ Stash remembers all of it — searchable, organised, and one keystroke away.
 [**Download**](https://github.com/santoshP0/clipboard-manager/releases/latest) ·
 [Features](#features) ·
 [Shortcuts](#keyboard-shortcuts) ·
-[Text expansion](#text-expansion)
+[Text expansion](#text-expansion) ·
+[Run locally](#run-it-locally)
 
 [![Release](https://img.shields.io/github/v/release/santoshP0/clipboard-manager?include_prereleases&label=download)](https://github.com/santoshP0/clipboard-manager/releases/latest)
 ![Platform](https://img.shields.io/badge/macOS%2011%2B-supported-success)
@@ -120,15 +121,45 @@ permission. It asks **once**, when you save your first snippet, and never again.
 
 ---
 
-## Build from source
+## Run it locally
 
-Requires [Bun](https://bun.sh), [Rust](https://rustup.rs) and the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/).
+**1. Install the toolchain**
+
+| | |
+| --- | --- |
+| [Bun](https://bun.sh) | `curl -fsSL https://bun.sh/install \| bash` |
+| [Rust](https://rustup.rs) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Xcode Command Line Tools | `xcode-select --install` |
+
+On Windows and Linux, follow the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/) instead of the
+Xcode step.
+
+**2. Clone and install**
 
 ```sh
+git clone https://github.com/santoshP0/clipboard-manager.git
+cd clipboard-manager
 bun install
+```
+
+**3. Run**
+
+```sh
 bun run app
 ```
+
+The app launches and the interface hot-reloads as you edit `src/`. Changes to
+`src-tauri/src/` rebuild the Rust binary and relaunch, which takes a minute.
+
+**Building a release**
+
+```sh
+bun run app:build
+```
+
+Bundles land in `src-tauri/target/release/bundle/` — `.app` and `.dmg` on macOS,
+`.msi` and `.exe` on Windows, `.deb` and `.AppImage` on Linux.
 
 macOS signing uses a local self-signed identity named `Memory Dev`. Create one
 in Keychain Access, or remove `bundle.macOS.signingIdentity` from
