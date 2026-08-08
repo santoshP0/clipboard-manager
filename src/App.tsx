@@ -25,7 +25,7 @@ function useTheme(preference: string) {
 
 export default function App() {
   const loaded = useStore()
-  const { toast, fire } = useToast()
+  const { toast, fire, dismiss } = useToast()
   const [revealed, setRevealed] = useState(false)
   const reveal = useCallback(() => setRevealed(true), [])
   const { settings } = loaded.store
@@ -88,7 +88,18 @@ export default function App() {
               <path d="M5 12l5 5L20 7" />
             </svg>
           </div>
-          <span style={s('font-size:13px;font-weight:560;letter-spacing:-.01em')}>{toast}</span>
+          <span style={s('font-size:13px;font-weight:560;letter-spacing:-.01em')}>{toast.msg}</span>
+          {toast.action && (
+            <button
+              onClick={() => {
+                toast.action?.run()
+                dismiss()
+              }}
+              style={s('margin-left:4px;border:0;cursor:pointer;font:inherit;font-size:12.5px;font-weight:640;color:var(--accent);background:var(--sel);padding:5px 11px;border-radius:8px')}
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>,
         document.body,
       )}

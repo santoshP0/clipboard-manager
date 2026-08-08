@@ -72,10 +72,14 @@ export default function Menu({ loaded }: { loaded: Loaded }) {
   // collection that has since been deleted falls back too, rather than showing
   // an empty list under a name that no longer exists.
   const view = settings.menuView ?? 'Recent'
-  const coll = (store.collections ?? []).find((c) => c.id === collViewId(view))
-  const live = collViewId(view) != null && !coll ? 'Recent' : view
-  const listed = menuFilter(store.items, live).slice(0, 4)
-  const heading = coll ? coll.name : live
+  const colls = store.collections ?? []
+  const picks = settings.menuColls ?? []
+  const legacy = colls.find((c) => c.id === collViewId(view))
+  const live = collViewId(view) != null && !legacy ? 'Recent' : view
+  const listed = menuFilter(store.items, live, picks).slice(0, 4)
+  // One collection selected names itself; several keep the generic heading.
+  const only = picks.length === 1 ? colls.find((c) => c.id === picks[0]) : undefined
+  const heading = legacy?.name ?? (view === 'Collections' ? only?.name ?? 'Collections' : live)
 
   const [hint, setHint] = useState<string | null>(null)
   const panel = useRef<HTMLDivElement>(null)

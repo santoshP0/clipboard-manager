@@ -1,13 +1,13 @@
 {
   "name": "clipboard-manager",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "app": "tauri dev",
     "app:build": "tauri build",
-    "app:ax": "tsc -b && vite build && tauri build --debug --bundles app && open src-tauri/target/debug/bundle/macos/Memory.app",
+    "app:ax": "tsc -b && vite build && tauri build --debug --bundles app && open src-tauri/target/debug/bundle/macos/Stash.app",
     "tauri": "tauri",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

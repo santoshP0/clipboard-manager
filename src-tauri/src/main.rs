@@ -107,13 +107,30 @@ struct Settings {
     /// We ask for Accessibility once, when the first snippet is saved. Never again.
     #[serde(default)]
     asked_accessibility: bool,
-    /// What the tray popover lists: Recent | Pinned | Favorites
+    /// What the tray popover lists: Recent | Pinned | Favorites | Collections
     #[serde(default = "default_menu_view")]
     menu_view: String,
+    /// Which collections feed the Collections view. Empty means all of them.
+    #[serde(default)]
+    menu_colls: Vec<u64>,
+    /// Hold deleted items briefly so they can be restored.
+    #[serde(default = "enabled")]
+    undo_delete: bool,
+    /// How long the undo offer stands, in seconds.
+    #[serde(default = "default_undo_seconds")]
+    undo_seconds: u32,
 }
 
 fn default_menu_view() -> String {
     "Recent".into()
+}
+
+fn enabled() -> bool {
+    true
+}
+
+fn default_undo_seconds() -> u32 {
+    5
 }
 
 impl Default for Settings {
@@ -131,6 +148,9 @@ impl Default for Settings {
             expand_snippets: false,
             asked_accessibility: false,
             menu_view: default_menu_view(),
+            menu_colls: Vec::new(),
+            undo_delete: true,
+            undo_seconds: default_undo_seconds(),
         }
     }
 }
@@ -158,6 +178,9 @@ struct AppState {
     suppress_until: Mutex<u64>,
     /// Earliest time (ms) we may shell out to read a file URL again.
     file_check: Mutex<u64>,
+    /// The most recent delete, held so it can be undone. Their preview files
+    /// stay on disk until the next delete replaces them.
+    trash: Mutex<Vec<Item>>,
 }
 
 /* ------------------------------------------------------------------ *
@@ -768,6 +791,21 @@ fn drop_thumb(dir: &Path, item: &Item) {
     }
 }
 
+/// Copying something already in history lifts the old entry to the top rather
+/// than adding a second copy — it keeps its pin, star and collection that way.
+/// `None` means the content is new; `Some(true)` that an entry actually moved.
+fn bump_existing(store: &mut Store, digest: u64) -> Option<bool> {
+    let pos = store.items.iter().position(|i| i.hash == digest)?;
+    if pos == 0 {
+        // Already newest — this is the restart case, nothing to announce.
+        return Some(false);
+    }
+    let mut item = store.items.remove(pos);
+    item.ts = now_ms();
+    store.items.insert(0, item);
+    Some(true)
+}
+
 /// Drop items the retention settings say we should no longer keep.
 fn prune(store: &mut Store) {
     let limit = store.settings.history_limit.parse::<usize>().ok();
@@ -845,17 +883,17 @@ fn capture_text(app: &AppHandle, state: &State<AppState>, text: String) -> bool 
     {
         return false;
     }
-    if store.items.first().is_some_and(|i| i.hash == h) {
-        return false;
+    if let Some(moved) = bump_existing(&mut store, h) {
+        return moved;
     }
     store.next_id += 1;
     let item = match file {
         Some(path) => file_item(store.next_id, &path, source, &state.dir),
         None => text_item(store.next_id, &text, source),
     };
-    if store.items.first().is_some_and(|i| i.hash == item.hash) {
+    if let Some(moved) = bump_existing(&mut store, item.hash) {
         store.next_id -= 1;
-        return false;
+        return moved;
     }
     store.items.insert(0, item);
     drop(store);
@@ -890,8 +928,8 @@ fn capture_file(_app: &AppHandle, state: &State<AppState>) -> bool {
 
     let source = frontmost_app();
     let mut store = state.store.lock().unwrap();
-    if store.items.first().is_some_and(|i| i.hash == h) {
-        return false;
+    if let Some(moved) = bump_existing(&mut store, h) {
+        return moved;
     }
     store.next_id += 1;
     let item = file_item(store.next_id, &path, source, &state.dir);
@@ -933,8 +971,8 @@ fn capture_image(app: &AppHandle, state: &State<AppState>) -> bool {
 
     let source = frontmost_app();
     let mut store = state.store.lock().unwrap();
-    if store.items.first().is_some_and(|i| i.hash == digest) {
-        return false;
+    if let Some(moved) = bump_existing(&mut store, digest) {
+        return moved;
     }
     store.next_id += 1;
     let id = store.next_id;
@@ -1112,21 +1150,78 @@ fn toggle_fav(app: AppHandle, state: State<AppState>, id: u64) {
     publish(&app);
 }
 
+/// Delete a batch. The removed items go to the trash so `undo_delete` can put
+/// them back; only the *previous* batch's preview files are erased, which is
+/// what keeps an undone image from coming back without its thumbnail.
 #[tauri::command]
-fn remove_item(app: AppHandle, state: State<AppState>, id: u64) -> bool {
-    {
+fn remove_items(app: AppHandle, state: State<AppState>, ids: Vec<u64>) -> usize {
+    let (removed, undoable) = {
         let mut store = state.store.lock().unwrap();
         let locked = locked_colls(&store);
-        match store.items.iter().find(|i| i.id == id) {
-            // The UI hides Delete for these, but ⌘⌫ and the tray reach here too.
-            Some(item) if is_frozen(item, &locked) => return false,
-            Some(item) => drop_thumb(&state.dir, item),
-            None => return false,
+        let undoable = store.settings.undo_delete;
+        // The UI hides Delete for frozen items, but ⌘⌫ and the tray reach here.
+        let doomed: HashSet<u64> = store
+            .items
+            .iter()
+            .filter(|i| ids.contains(&i.id) && !is_frozen(i, &locked))
+            .map(|i| i.id)
+            .collect();
+        if doomed.is_empty() {
+            return 0;
         }
-        store.items.retain(|i| i.id != id);
+        let mut taken = Vec::new();
+        store.items.retain(|i| {
+            if doomed.contains(&i.id) {
+                taken.push(i.clone());
+                false
+            } else {
+                true
+            }
+        });
+        (taken, undoable)
+    };
+
+    let count = removed.len();
+    let mut trash = state.trash.lock().unwrap();
+    for old in trash.drain(..) {
+        drop_thumb(&state.dir, &old);
     }
+    if undoable {
+        *trash = removed;
+    } else {
+        // Nothing to restore, so the previews needn't linger.
+        for item in &removed {
+            drop_thumb(&state.dir, item);
+        }
+    }
+    drop(trash);
+
     publish(&app);
-    true
+    count
+}
+
+#[tauri::command]
+fn remove_item(app: AppHandle, state: State<AppState>, id: u64) -> bool {
+    remove_items(app, state, vec![id]) == 1
+}
+
+/// Put the last deleted batch back, newest-first ordering restored.
+#[tauri::command]
+fn undo_delete(app: AppHandle, state: State<AppState>) -> usize {
+    let restored = {
+        let mut trash = state.trash.lock().unwrap();
+        if trash.is_empty() {
+            return 0;
+        }
+        let items: Vec<Item> = trash.drain(..).collect();
+        let mut store = state.store.lock().unwrap();
+        let count = items.len();
+        store.items.extend(items);
+        store.items.sort_by(|a, b| b.ts.cmp(&a.ts));
+        count
+    };
+    publish(&app);
+    restored
 }
 
 #[tauri::command]
@@ -1141,6 +1236,9 @@ fn clear_history(app: AppHandle, state: State<AppState>) {
             drop_thumb(&state.dir, item);
         }
         store.items.retain(keep);
+    }
+    for old in state.trash.lock().unwrap().drain(..) {
+        drop_thumb(&state.dir, &old);
     }
     publish(&app);
 }
@@ -1234,9 +1332,19 @@ fn reveal_self() {
         .find(|p| p.extension().is_some_and(|e| e == "app"))
         .unwrap_or(&exe)
         .to_path_buf();
-    let _ = std::process::Command::new("open")
-        .args(["-R", &target.to_string_lossy()])
-        .spawn();
+    reveal(&target);
+}
+
+/// Show a path in the platform's file manager.
+fn reveal(path: &Path) {
+    let target = path.to_string_lossy().to_string();
+    #[cfg(target_os = "macos")]
+    let (cmd, args): (&str, Vec<&str>) = ("open", vec!["-R", &target]);
+    #[cfg(target_os = "linux")]
+    let (cmd, args): (&str, Vec<&str>) = ("xdg-open", vec![&target]);
+    #[cfg(target_os = "windows")]
+    let (cmd, args): (&str, Vec<&str>) = ("explorer", vec!["/select,", &target]);
+    let _ = std::process::Command::new(cmd).args(args).spawn();
 }
 
 /// Does the OS let us observe typing yet? Only reports — never prompts. The one
@@ -1484,6 +1592,13 @@ fn main() {
     );
 
     tauri::Builder::default()
+        // Remember where the main window was left. The panels are excluded:
+        // they size themselves to their content and are placed by the tray.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["quick", "menu"])
+                .build(),
+        )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -1506,6 +1621,8 @@ fn main() {
             toggle_pin,
             toggle_fav,
             remove_item,
+            remove_items,
+            undo_delete,
             clear_history,
             add_collection,
             lock_collection,
@@ -1546,6 +1663,7 @@ fn main() {
                 seen: Mutex::new(0),
                 suppress_until: Mutex::new(0),
                 file_check: Mutex::new(0),
+                trash: Mutex::new(Vec::new()),
             });
 
             // The main window is up at launch, so claim a Dock icon to match.

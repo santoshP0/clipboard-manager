@@ -299,13 +299,10 @@ export function Segmented({
  * Settings dropdown, for choices that grow at runtime — Segmented lays its
  * options out side by side and falls apart past three or four.
  */
-export function Picker({
-  options, value, onChange,
-}: {
-  options: { value: string; label: string; dot?: string }[]
-  value: string
-  onChange: (next: string) => void
-}) {
+export type Option = { value: string; label: string; dot?: string }
+
+/** Open/close plumbing shared by the pickers: outside click and Escape. */
+function usePopover() {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
 
@@ -323,6 +320,36 @@ export function Picker({
     }
   }, [open])
 
+  return { open, setOpen, box }
+}
+
+const TRIGGER =
+  'display:flex;align-items:center;gap:7px;border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:11.5px;font-weight:560;padding:6px 9px 6px 11px;border-radius:9px;background:var(--surface);color:var(--text);min-width:132px'
+const MENU =
+  'position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:100%;max-height:240px;overflow-y:auto;padding:5px;background:var(--glass);border:.5px solid var(--line);border-radius:10px;box-shadow:var(--shadow);animation:popIn .14s cubic-bezier(.32,.72,0,1);transform-origin:top right'
+const MENU_ROW =
+  'display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;cursor:pointer;font:inherit;font-size:12px;font-weight:520;color:var(--text);padding:7px 9px;border-radius:7px;text-align:left;white-space:nowrap'
+
+const Tick = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12l5 5L20 7" />
+  </svg>
+)
+
+const Chevron = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+)
+
+export function Picker({
+  options, value, onChange,
+}: {
+  options: Option[]
+  value: string
+  onChange: (next: string) => void
+}) {
+  const { open, setOpen, box } = usePopover()
   const current = options.find((o) => o.value === value) ?? options[0]
 
   return (
@@ -330,7 +357,7 @@ export function Picker({
       <button
         onClick={() => setOpen((v) => !v)}
         style={{
-          ...s('display:flex;align-items:center;gap:7px;border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:11.5px;font-weight:560;padding:6px 9px 6px 11px;border-radius:9px;background:var(--surface);color:var(--text);min-width:132px'),
+          ...s(TRIGGER),
           borderColor: open ? 'var(--accent)' : 'var(--line)',
           boxShadow: open ? '0 0 0 3px var(--sel)' : 'var(--shadow-sm)',
         }}
@@ -341,16 +368,11 @@ export function Picker({
         <span style={s('flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
           {current?.label}
         </span>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <Chevron />
       </button>
 
       {open && (
-        <div
-          className="mem-scroll"
-          style={s('position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:100%;max-height:240px;overflow-y:auto;padding:5px;background:var(--glass);border:.5px solid var(--line);border-radius:10px;box-shadow:var(--shadow);animation:popIn .14s cubic-bezier(.32,.72,0,1);transform-origin:top right')}
-        >
+        <div className="mem-scroll" style={s(MENU)}>
           {options.map((option) => (
             <button
               key={option.value}
@@ -359,19 +381,81 @@ export function Picker({
                 setOpen(false)
                 onChange(option.value)
               }}
-              style={s('display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;cursor:pointer;font:inherit;font-size:12px;font-weight:520;color:var(--text);padding:7px 9px;border-radius:7px;text-align:left;white-space:nowrap')}
+              style={s(MENU_ROW)}
             >
               {option.dot && (
                 <span style={{ ...s('width:7px;height:7px;border-radius:50%;flex:none'), background: option.dot }} />
               )}
               <span style={s('flex:1;overflow:hidden;text-overflow:ellipsis')}>{option.label}</span>
-              {option.value === value && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-              )}
+              {option.value === value && <Tick />}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Same dropdown, but the rows toggle. An empty selection reads as "all", which
+ * is what you want for a filter — a new collection is included by default
+ * instead of silently missing.
+ */
+export function MultiPicker({
+  options, values, onChange, allLabel = 'All', noun = 'selected',
+}: {
+  options: Option[]
+  values: string[]
+  onChange: (next: string[]) => void
+  allLabel?: string
+  noun?: string
+}) {
+  const { open, setOpen, box } = usePopover()
+  const chosen = options.filter((o) => values.includes(o.value))
+  const label =
+    chosen.length === 0 ? allLabel : chosen.length === 1 ? chosen[0].label : `${chosen.length} ${noun}`
+
+  const toggle = (value: string) =>
+    onChange(values.includes(value) ? values.filter((v) => v !== value) : [...values, value])
+
+  return (
+    <div ref={box} style={s('position:relative;flex:none')}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          ...s(TRIGGER),
+          borderColor: open ? 'var(--accent)' : 'var(--line)',
+          boxShadow: open ? '0 0 0 3px var(--sel)' : 'var(--shadow-sm)',
+        }}
+      >
+        {chosen.length === 1 && chosen[0].dot && (
+          <span style={{ ...s('width:7px;height:7px;border-radius:50%;flex:none'), background: chosen[0].dot }} />
+        )}
+        <span style={s('flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+          {label}
+        </span>
+        <Chevron />
+      </button>
+
+      {open && (
+        <div className="mem-scroll" style={s(MENU)}>
+          <button className="mi" onClick={() => onChange([])} style={s(MENU_ROW)}>
+            <span style={s('flex:1;overflow:hidden;text-overflow:ellipsis')}>{allLabel}</span>
+            {values.length === 0 && <Tick />}
+          </button>
+          {options.length > 0 && <div style={s('height:.5px;background:var(--line);margin:4px 4px')} />}
+          {options.map((option) => (
+            <button key={option.value} className="mi" onClick={() => toggle(option.value)} style={s(MENU_ROW)}>
+              {option.dot && (
+                <span style={{ ...s('width:7px;height:7px;border-radius:50%;flex:none'), background: option.dot }} />
+              )}
+              <span style={s('flex:1;overflow:hidden;text-overflow:ellipsis')}>{option.label}</span>
+              {values.includes(option.value) && <Tick />}
+            </button>
+          ))}
+          {options.length === 0 && (
+            <div style={s('font-size:11.5px;color:var(--text-3);padding:6px 9px')}>No collections yet</div>
+          )}
         </div>
       )}
     </div>

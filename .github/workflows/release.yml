@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag like v1.0.0 and this builds every platform, then attaches the
+# installers to a GitHub release. Run it by hand from the Actions tab to test
+# the build without publishing anything.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: 'macOS (Apple Silicon)'
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            label: 'macOS (Intel)'
+          - platform: ubuntu-22.04
+            target: ''
+            label: 'Linux'
+          - platform: windows-latest
+            target: ''
+            label: 'Windows'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Only the Rust build output varies per platform, so key on it.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: ${{ matrix.target }}
+
+      # Tauri on Linux needs the system webview and its build headers.
+      - name: Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libxdo-dev build-essential curl wget file libssl-dev
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # tauri.conf.json signs locally with a self-signed cert that only
+          # exists on the dev machine; CI has no such identity, so fall back to
+          # ad-hoc. Set APPLE_CERTIFICATE and friends here to sign for real.
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Stash ${{ github.ref_name }}'
+          releaseBody: |
+            Stash — a clipboard manager that keeps everything you copy.
+
+            Downloads below. The macOS builds are ad-hoc signed, so the first
+            launch needs a right-click → Open (Gatekeeper blocks a plain
+            double-click on unsigned downloads).
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}

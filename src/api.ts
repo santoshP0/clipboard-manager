@@ -41,18 +41,29 @@ export function useQuickOpen(onOpen: () => void) {
   }, [onOpen])
 }
 
+export type Toast = { msg: string; action?: { label: string; run: () => void }; ms?: number }
+
 /** Transient confirmation message, cleared after a moment. */
 export function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const fire = useCallback((msg: string) => {
-    setToast(msg)
+  // An offer to undo has to outlive a plain "copied" nudge, so callers can
+  // pass their own duration.
+  const fire = useCallback((msg: string, extra?: Omit<Toast, 'msg'>) => {
+    setToast({ msg, ...extra })
     clearTimeout(timer.current)
-    timer.current = setTimeout(() => setToast(null), 1700)
+    timer.current = setTimeout(() => setToast(null), extra?.ms ?? 1700)
+  }, [])
+  const dismiss = useCallback(() => {
+    clearTimeout(timer.current)
+    setToast(null)
   }, [])
   useEffect(() => () => clearTimeout(timer.current), [])
-  return { toast, fire }
+  return { toast, fire, dismiss }
 }
+
+/** The `fire` handed down to panels. */
+export type Fire = (msg: string, extra?: Omit<Toast, 'msg'>) => void
 
 export const copyItem = (id: number) => invoke<string | null>('copy_item', { id })
 export const copyText = (text: string) => invoke('copy_text', { text })
@@ -60,6 +71,9 @@ export const copyFiles = (paths: string[]) => invoke<boolean>('copy_files', { pa
 export const togglePin = (id: number) => invoke('toggle_pin', { id })
 export const toggleFav = (id: number) => invoke('toggle_fav', { id })
 export const removeItem = (id: number) => invoke<boolean>('remove_item', { id })
+export const removeItems = (ids: number[]) => invoke<number>('remove_items', { ids })
+/** Restore the last deleted batch. Returns how many came back. */
+export const undoDelete = () => invoke<number>('undo_delete')
 export const clearHistory = () => invoke('clear_history')
 export const addCollection = (name: string) => invoke<number>('add_collection', { name })
 export const lockCollection = (id: number) => invoke('lock_collection', { id })

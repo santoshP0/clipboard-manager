@@ -83,8 +83,14 @@ export type Settings = {
   expandSnippets: boolean
   /** Asked for Accessibility once already. Must round-trip or we re-ask forever. */
   askedAccessibility: boolean
-  /** What the tray popover lists: a base view, or `c:<id>` for a collection. */
+  /** What the tray popover lists: Recent | Pinned | Favorites | Collections */
   menuView: string
+  /** Which collections feed the Collections view. Empty means all of them. */
+  menuColls: number[]
+  /** Hold deleted items briefly so they can be restored. */
+  undoDelete: boolean
+  /** How long the undo offer stands, in seconds. */
+  undoSeconds: number
 }
 
 export type Store = {
@@ -133,18 +139,28 @@ export const DEFAULT_SETTINGS: Settings = {
   expandSnippets: false,
   askedAccessibility: false,
   menuView: 'Recent',
+  menuColls: [],
+  undoDelete: true,
+  undoSeconds: 5,
 }
 
-export const MENU_VIEWS = ['Recent', 'Pinned', 'Favorites']
+export const MENU_VIEWS = ['Recent', 'Pinned', 'Favorites', 'Collections']
+export const UNDO_SECONDS = ['3', '5', '10']
 
-/** A menuView of `c:<id>` means "that collection"; anything else is a base view. */
+/** Older settings stored a single collection as `c:<id>`. */
 export const collViewId = (view: string) =>
   view.startsWith('c:') ? Number(view.slice(2)) : null
 
 /** The items the tray popover should list, for any menuView. */
-export function menuFilter(items: Item[], view: string): Item[] {
-  const id = collViewId(view)
-  return id == null ? segFilter(items, view) : segFilter(items.filter((x) => x.coll === id), 'Recent')
+export function menuFilter(items: Item[], view: string, menuColls: number[] = []): Item[] {
+  const legacy = collViewId(view)
+  if (legacy != null) return segFilter(items.filter((x) => x.coll === legacy), 'Recent')
+  if (view !== 'Collections') return segFilter(items, view)
+  // No explicit picks means every collection, so a new one shows up by default.
+  const filed = items.filter(
+    (x) => x.coll != null && (menuColls.length === 0 || menuColls.includes(x.coll)),
+  )
+  return segFilter(filed, 'Recent')
 }
 
 export const ACCENTS = ['#0a84ff', '#bf5af2', '#ff375f', '#30d158', '#8e8e93']

@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
-  addSnippet, copyItem, isMac, openPath, removeItem, removeSnippet, saveSettings, thumbUrl,
+  addSnippet, copyItem, isMac, openPath, removeItems, undoDelete, removeSnippet, saveSettings, thumbUrl,
   copyFiles, copyText, toggleFav, togglePin, runSnippet, useGoto, addCollection, lockCollection,
-  removeCollection, moveItems, accessibility, revealSelf, openAccessibilityPane, type Loaded,
+  removeCollection, moveItems, accessibility, revealSelf, openAccessibilityPane, type Fire, type Loaded,
 } from './api'
 import {
-  ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, MENU_VIEWS, PIN_PATH, SEL_BAR, dayBucket,
+  ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, MENU_VIEWS, UNDO_SECONDS, PIN_PATH, SEL_BAR, dayBucket,
   exactTime, frozen, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont,
   tintColor, typeLabel, type Collection, type Item, type Settings,
 } from './lib'
 import {
   EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon, Segmented, StackPreview,
-  SwatchPicker, Toggle, Picker,
+  SwatchPicker, Toggle, Picker, MultiPicker,
 } from './ui'
 import { dissolveElement } from './dissolve'
 import FlameWrap from './flame-wrap'
@@ -95,7 +95,7 @@ function kindSummary(items: Item[]): string {
 const payloadOf = (it: Item) => it.body || it.url || it.value || it.path || it.title
 const hotkeyLabel = isMac ? '⌘⇧V' : 'Ctrl+Shift+V'
 
-export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => void }) {
+export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
   const { store, state } = loaded
   const { settings } = store
   const [section, setSection] = useState('History')
@@ -204,8 +204,22 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
       const row = document.querySelector<HTMLElement>(`[data-row="${t.id}"]`)
       if (row) dissolveElement(row, ['var(--text)', tintColor(t.kind), '#ffffff'])
     }
-    targets.forEach((t) => void removeItem(t.id))
-    fire(targets.length === 1 ? 'Deleted “' + targets[0].title + '”' : 'Deleted ' + targets.length + ' items')
+    const ids = targets.map((t) => t.id)
+    const msg =
+      targets.length === 1 ? 'Deleted “' + targets[0].title + '”' : 'Deleted ' + targets.length + ' items'
+    void removeItems(ids)
+    fire(
+      msg,
+      settings.undoDelete
+        ? {
+            ms: (settings.undoSeconds || 5) * 1000,
+            action: {
+              label: 'Undo',
+              run: () => void undoDelete().then((n) => n && fire('Restored ' + n + ' item' + (n > 1 ? 's' : ''))),
+            },
+          }
+        : undefined,
+    )
     clearSel()
   }
 
@@ -949,7 +963,7 @@ function Collections({
   items: Item[]
   colls: Collection[]
   onOpen: (id: number) => void
-  fire: (msg: string) => void
+  fire: Fire
 }) {
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -1091,7 +1105,7 @@ const literal = {
   autoComplete: 'off',
 } as const
 
-function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => void }) {
+function Snippets({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
   const { snippets, settings } = loaded.store
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ name: '', trigger: '', body: '' })
@@ -1227,7 +1241,7 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => voi
  * buttons go live. Left empty the panel says so rather than pretending.
  */
 const DONATE_URL: string = ''
-const APP_VERSION = '0.1.0'
+const APP_VERSION = '1.0.0'
 
 function About({ items }: { items: Item[] }) {
   const bytes = items.reduce((sum, x) => sum + (x.bytes || 0), 0)
@@ -1481,19 +1495,50 @@ function SettingsPane({
           desc: 'What the tray popover shows',
           control: (
             <Picker
-              options={[
-                ...MENU_VIEWS.map((v) => ({ value: v, label: v })),
-                ...colls.map((c) => ({
-                  value: `c:${c.id}`,
-                  label: c.name,
-                  dot: collColor(colls, c.id),
-                })),
-              ]}
+              options={MENU_VIEWS.map((v) => ({ value: v, label: v }))}
               value={settings.menuView ?? 'Recent'}
               onChange={(menuView) => patch({ menuView })}
             />
           ),
         },
+        // Only meaningful once Collections is the chosen view.
+        ...(settings.menuView === 'Collections'
+          ? [{
+              title: 'Collections shown',
+              desc: 'Leave as All to include new ones automatically',
+              control: (
+                <MultiPicker
+                  options={colls.map((c) => ({
+                    value: String(c.id),
+                    label: c.name,
+                    dot: collColor(colls, c.id),
+                  }))}
+                  values={(settings.menuColls ?? []).map(String)}
+                  onChange={(next) => patch({ menuColls: next.map(Number) })}
+                  allLabel="All collections"
+                  noun="collections"
+                />
+              ),
+            }]
+          : []),
+        {
+          title: 'Undo delete',
+          desc: 'Offer to restore items right after deleting them',
+          control: <Toggle on={settings.undoDelete} onChange={() => patch({ undoDelete: !settings.undoDelete })} />,
+        },
+        ...(settings.undoDelete
+          ? [{
+              title: 'Undo window',
+              desc: 'How long the offer stands',
+              control: (
+                <Segmented
+                  options={UNDO_SECONDS.map((n) => `${n}s`)}
+                  value={`${settings.undoSeconds ?? 5}s`}
+                  onChange={(next) => patch({ undoSeconds: Number(next.replace('s', '')) })}
+                />
+              ),
+            }]
+          : []),
         {
           title: 'History limit',
           desc: 'Items to retain',
@@ -1594,7 +1639,7 @@ function SettingsPane({
   ]
 
   return (
-    <div style={s('padding:20px;max-width:660px')}>
+    <div style={s('padding:20px 22px')}>
       {/* macOS refuses to show its permission prompt for an ad-hoc signed app,
           so adding it by hand is the only way in. Spell it out. */}
       {needsSetup && (
