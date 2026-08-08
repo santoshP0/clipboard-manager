@@ -71,6 +71,14 @@ export const addSnippet = (name: string, trigger: string, body: string) =>
   invoke('add_snippet', { name, trigger, body })
 export const runSnippet = (id: number) => invoke<string | null>('use_snippet', { id })
 export const removeSnippet = (id: number) => invoke('remove_snippet', { id })
+/** Accessibility permission — `prompt` shows the macOS dialog when missing. */
+/** Reports whether the OS trusts us to observe typing. Never prompts. */
+export const accessibility = () => invoke<boolean>('accessibility')
+/** Show Memory.app in Finder, to drag into the Accessibility list. */
+export const revealSelf = () => invoke('reveal_self')
+/** macOS 26 renamed the Privacy pane; the old id no longer resolves. */
+export const openAccessibilityPane = () =>
+  openPath('x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility')
 export const showMain = (section?: string) => invoke('show_main', { section })
 export const showQuick = () => invoke('show_quick')
 export const openPath = (path: string) => invoke('open_path', { path })

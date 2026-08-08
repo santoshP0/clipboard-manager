@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   addSnippet, copyItem, isMac, openPath, removeItem, removeSnippet, saveSettings, thumbUrl,
   copyFiles, copyText, toggleFav, togglePin, runSnippet, useGoto, addCollection, lockCollection,
-  removeCollection, moveItems, type Loaded,
+  removeCollection, moveItems, accessibility, revealSelf, openAccessibilityPane, type Loaded,
 } from './api'
 import {
   ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, PIN_PATH, SEL_BAR, dayBucket,
@@ -45,6 +45,7 @@ const NAV_GROUPS: { label: string; items: [string, string][] }[] = [
         'Settings',
         'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3.9a7 7 0 0 0-1.7-1L16.5 2h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-.9-2 3.4L5.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3.9 2-3.4-2-1.5c.06-.33.1-.66.1-1z',
       ],
+      ['About', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 11v5M12 8h.01'],
     ],
   },
 ]
@@ -52,7 +53,7 @@ const NAV_GROUPS: { label: string; items: [string, string][] }[] = [
 const MODE: Record<string, string> = {
   History: 'list', Favorites: 'list', Code: 'list', Links: 'list', Files: 'list',
   Timeline: 'timeline', Images: 'grid', Collections: 'collections', Snippets: 'snippets',
-  Statistics: 'stats', Settings: 'settings',
+  Statistics: 'stats', Settings: 'settings', About: 'about',
 }
 
 const SUBTITLE: Record<string, string> = {
@@ -67,6 +68,7 @@ const SUBTITLE: Record<string, string> = {
   Snippets: 'Reusable expansions',
   Statistics: 'Your clipboard, quantified',
   Settings: 'Preferences & privacy',
+  About: 'Free, yours, and staying that way',
 }
 
 const COUNTED = ['History', 'Favorites', 'Images', 'Files', 'Code', 'Links']
@@ -394,6 +396,8 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                 <Snippets loaded={loaded} fire={fire} />
               ) : mode === 'stats' ? (
                 <Stats items={store.items} />
+              ) : mode === 'about' ? (
+                <About items={store.items} />
               ) : (
                 <SettingsPane settings={settings} patch={patch} />
               )}
@@ -1076,9 +1080,23 @@ function TileButton({
 }
 
 function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => void }) {
-  const { snippets } = loaded.store
+  const { snippets, settings } = loaded.store
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ name: '', trigger: '', body: '' })
+  const [trusted, setTrusted] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    const check = () => void accessibility().then((ok) => alive && setTrusted(ok))
+    check()
+    // Permission is granted in System Settings, outside this window — re-check
+    // until it lands, then the banner goes away on its own.
+    const timer = setInterval(check, 2000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
 
   const field = s('border:.5px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--text);outline:0;width:100%')
 
@@ -1089,8 +1107,40 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => voi
     setAdding(false)
   }
 
+  const live = settings.expandSnippets && trusted
+
   return (
     <div style={s('padding:16px 18px;display:flex;flex-direction:column;gap:12px')}>
+      {snippets.length > 0 && (
+        <div
+          style={{
+            ...s('border-radius:11px;padding:13px 15px;display:flex;align-items:center;gap:12px'),
+            border: `.5px solid ${live ? 'var(--line)' : 'var(--accent)'}`,
+            background: live ? 'var(--surface)' : 'var(--surface)',
+          }}
+        >
+          <span style={{ ...s('width:8px;height:8px;border-radius:50%;flex:none'), background: live ? 'var(--green)' : 'var(--orange)' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={s('font-size:12.5px;font-weight:600')}>
+              {live ? 'Expanding everywhere' : 'Expansion needs Accessibility'}
+            </div>
+            <div style={s('font-size:11.5px;color:var(--text-3);margin-top:2px;line-height:1.45')}>
+              {live
+                ? 'Type a trigger in any app and it turns into the body, like iOS Text Replacement.'
+                : 'Add Memory under Privacy & Security → Accessibility. This updates by itself once you do.'}
+            </div>
+          </div>
+          {!live && (
+            <button
+              onClick={() => void openAccessibilityPane()}
+              style={s('flex:none;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:#fff;background:var(--accent);padding:7px 13px;border-radius:8px')}
+            >
+              Open
+            </button>
+          )}
+        </div>
+      )}
+
       {adding ? (
         <div style={s('border:.5px solid var(--line);border-radius:12px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:9px')}>
           <div style={s('display:flex;gap:9px')}>
@@ -1155,6 +1205,94 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => voi
           No snippets yet. Add one to reuse text you paste often.
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Point this at your Ko-fi / Buy Me a Coffee / PayPal.me page and the support
+ * buttons go live. Left empty the panel says so rather than pretending.
+ */
+const DONATE_URL: string = ''
+const APP_VERSION = '0.1.0'
+
+function About({ items }: { items: Item[] }) {
+  const bytes = items.reduce((sum, x) => sum + (x.bytes || 0), 0)
+
+  const give = (amount: string) => {
+    const sep = DONATE_URL.endsWith('/') ? '' : '/'
+    void openPath(amount === 'any' ? DONATE_URL : `${DONATE_URL}${sep}${amount}`)
+  }
+
+  const card = 'border:.5px solid var(--line);border-radius:13px;background:var(--surface);padding:18px 20px'
+
+  return (
+    <div style={s('padding:20px;max-width:660px;display:flex;flex-direction:column;gap:16px')}>
+      <div style={{ ...s(card), display: 'flex', alignItems: 'center', gap: 16 }}>
+        <img src="/mark.svg" width={64} height={64} alt="" style={s('display:block;border-radius:15px;box-shadow:var(--shadow-sm);flex:none')} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={s('font-size:19px;font-weight:700;letter-spacing:-.02em')}>Memory</div>
+          <div style={s('font-size:12.5px;color:var(--text-2);margin-top:2px')}>
+            Everything you copy, kept · Version {APP_VERSION}
+          </div>
+          <div style={s('font-size:11.5px;color:var(--text-3);margin-top:6px')}>
+            {items.length.toLocaleString()} items kept · {humanSize(bytes)} on disk
+          </div>
+        </div>
+      </div>
+
+      <div style={s(card)}>
+        <div style={s('font-size:14px;font-weight:640;letter-spacing:-.01em;margin-bottom:10px')}>
+          Free to use. All of it.
+        </div>
+        <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.65')}>
+          No account, no subscription, no trial that expires, no feature locked behind a
+          tier. Your clipboard history never leaves this Mac — it lives in a single file in
+          your Application Support folder, and nothing is uploaded, synced or measured.
+        </div>
+        <div style={s('display:flex;flex-wrap:wrap;gap:7px;margin-top:14px')}>
+          {['No accounts', 'No telemetry', 'No cloud', 'Local file only'].map((tag) => (
+            <span key={tag} style={s('font-size:11px;font-weight:560;color:var(--green);background:rgba(48,209,88,.13);padding:5px 10px;border-radius:7px')}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Hidden until DONATE_URL points somewhere — buttons that go nowhere
+          are worse than no buttons. Set it and this card comes back. */}
+      {DONATE_URL ? (
+      <div style={s(card)}>
+        <div style={s('font-size:14px;font-weight:640;letter-spacing:-.01em;margin-bottom:6px')}>
+          If it saves you time
+        </div>
+        <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.65;margin-bottom:14px')}>
+          Chip in whatever it's worth to you — any amount, once, never a subscription.
+          Skipping this changes nothing: the app is complete either way.
+        </div>
+        <div style={s('display:flex;gap:8px;flex-wrap:wrap')}>
+          {['3', '5', '10'].map((amount) => (
+            <button
+              key={amount}
+              onClick={() => give(amount)}
+              style={s('border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:var(--text);background:var(--surface-2);padding:9px 18px;border-radius:9px')}
+            >
+              ${amount}
+            </button>
+          ))}
+          <button
+            onClick={() => give('any')}
+            style={s('border:0;cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:#fff;background:var(--accent);padding:9px 18px;border-radius:9px;box-shadow:var(--shadow-sm)')}
+          >
+            Any amount
+          </button>
+        </div>
+      </div>
+      ) : null}
+
+      <div style={s('font-size:11.5px;color:var(--text-3);text-align:center;line-height:1.6;padding:4px 0 8px')}>
+        Built with Tauri, Rust and React · Thanks for using it
+      </div>
     </div>
   )
 }
@@ -1282,8 +1420,30 @@ function Stats({ items }: { items: Item[] }) {
 function SettingsPane({
   settings, patch,
 }: {
-  settings: Settings; patch: (next: Partial<Settings>) => void
+  settings: Settings
+  patch: (next: Partial<Settings>) => void
 }) {
+  const [trusted, setTrusted] = useState(true)
+  useEffect(() => {
+    let alive = true
+    const check = () => void accessibility().then((ok) => alive && setTrusted(ok))
+    check()
+    // Granting happens in System Settings, outside this window — poll for it.
+    const timer = setInterval(check, 2000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
+
+  /** Plain switch — the permission is asked for once, when a snippet is saved. */
+  const toggleExpand = async () => {
+    patch({ expandSnippets: !settings.expandSnippets })
+    setTrusted(await accessibility())
+  }
+
+  const needsSetup = settings.expandSnippets && !trusted
+
   const groups: { label: string; rows: { title: string; desc: string; control: ReactNode }[] }[] = [
     {
       label: 'General',
@@ -1312,6 +1472,20 @@ function SettingsPane({
               onChange={(historyLimit) => patch({ historyLimit })}
             />
           ),
+        },
+      ],
+    },
+    {
+      label: 'Snippets',
+      rows: [
+        {
+          title: 'Expand triggers as you type',
+          desc: !settings.expandSnippets
+            ? 'Watches typing system-wide. Needs Accessibility permission.'
+            : trusted
+              ? 'Ready — type a trigger in any app and it becomes the body'
+              : 'Waiting on Accessibility. Grant it, then quit and reopen Memory.',
+          control: <Toggle on={settings.expandSnippets} onChange={() => void toggleExpand()} />,
         },
       ],
     },
@@ -1389,6 +1563,36 @@ function SettingsPane({
 
   return (
     <div style={s('padding:20px;max-width:660px')}>
+      {/* macOS refuses to show its permission prompt for an ad-hoc signed app,
+          so adding it by hand is the only way in. Spell it out. */}
+      {needsSetup && (
+        <div style={s('border:.5px solid var(--accent);border-radius:13px;background:var(--surface);padding:18px 20px;margin-bottom:24px')}>
+          <div style={s('font-size:13.5px;font-weight:640;letter-spacing:-.01em;margin-bottom:6px')}>
+            One step left — add Memory to Accessibility
+          </div>
+          <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.6;margin-bottom:14px')}>
+            macOS won’t pop its own prompt for an unsigned app, so add it yourself:
+            open the pane, click <b>+</b>, and pick <b>Memory</b> — the Reveal button puts
+            it in a Finder window you can drag straight in. This page notices the moment
+            it’s granted.
+          </div>
+          <div style={s('display:flex;gap:9px;flex-wrap:wrap')}>
+            <button
+              onClick={() => void openAccessibilityPane()}
+              style={s('border:0;cursor:pointer;font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--accent);padding:9px 16px;border-radius:9px')}
+            >
+              Open Accessibility settings
+            </button>
+            <button
+              onClick={() => void revealSelf()}
+              style={s('border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:12.5px;font-weight:600;color:var(--text);background:var(--surface-2);padding:9px 16px;border-radius:9px')}
+            >
+              Reveal Memory in Finder
+            </button>
+          </div>
+        </div>
+      )}
+
       {groups.map((grp) => (
         <div key={grp.label} style={{ marginBottom: 24 }}>
           <div style={s('font-size:12px;font-weight:660;letter-spacing:.02em;color:var(--text-2);margin-bottom:9px;padding-left:2px')}>

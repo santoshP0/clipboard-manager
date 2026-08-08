@@ -79,6 +79,10 @@ export type Settings = {
   autoClear: string
   historyLimit: string
   paused: boolean
+  /** Watch typing system-wide and replace snippet triggers. Needs Accessibility. */
+  expandSnippets: boolean
+  /** Asked for Accessibility once already. Must round-trip or we re-ask forever. */
+  askedAccessibility: boolean
 }
 
 export type Store = {
@@ -88,6 +92,27 @@ export type Store = {
   settings: Settings
   nextId: number
 }
+
+/**
+ * A snippet, dressed as a row so it can ride the normal item list. The negative
+ * id is how the copy path tells the two apart.
+ */
+export const snippetRow = (sn: Snippet): Item => ({
+  id: -sn.id,
+  kind: 'text',
+  title: sn.name,
+  body: sn.body,
+  bytes: sn.body.length,
+  app: sn.trigger,
+  ts: Date.now(),
+  pinned: false,
+  fav: false,
+  secret: false,
+})
+
+/** Snippets whose trigger, name or body matches what's typed. */
+export const snippetMatches = (snippets: Snippet[], q: string): Snippet[] =>
+  q.trim() ? snippets.filter((sn) => fz(q, sn.trigger + ' ' + sn.name + ' ' + sn.body)) : []
 
 /** True when this item sits in a locked collection. */
 export const frozen = (it: Item, colls: Collection[]) =>
@@ -103,6 +128,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoClear: '1 hour',
   historyLimit: 'Unlimited',
   paused: false,
+  expandSnippets: false,
+  askedAccessibility: false,
 }
 
 export const ACCENTS = ['#0a84ff', '#bf5af2', '#ff375f', '#30d158', '#8e8e93']

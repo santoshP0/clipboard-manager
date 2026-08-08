@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
-  copyItem, hideSelf, isMac, removeItem, togglePin, useFitWindow, useQuickOpen, type Loaded,
+  copyItem, hideSelf, isMac, removeItem, runSnippet, togglePin, useFitWindow, useQuickOpen,
+  type Loaded,
 } from './api'
 import {
-  PIN_PATH, SEL_BAR, frozen, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, tintColor,
-  typeLabel,
+  PIN_PATH, SEL_BAR, frozen, fz, hay, metaFor, relTime, s, segFilter, snippetMatches, snippetRow,
+  sub, subFont, tintColor, typeLabel,
 } from './lib'
 import {
   EmptyClipboard, IconBox, KeyHint, LoadingRows, NoMatches, Preview, SearchIcon,
@@ -25,7 +26,14 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
   const panel = useRef<HTMLDivElement>(null)
   useFitWindow(panel)
 
-  const list = segFilter(store.items, seg).filter((x) => fz(q, hay(x)))
+  // Typing a trigger like ";sig" surfaces that snippet at the top, ready to paste.
+  const list = useMemo(
+    () => [
+      ...snippetMatches(store.snippets, q).map(snippetRow),
+      ...segFilter(store.items, seg).filter((x) => fz(q, hay(x))),
+    ],
+    [store.snippets, store.items, seg, q],
+  )
   const sel = Math.min(selRaw, Math.max(0, list.length - 1))
   const selItem = list[sel]
   const meta = metaFor(selItem)
@@ -46,7 +54,7 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
   const copyAndClose = useCallback(async () => {
     const it = list[sel]
     if (!it) return
-    await copyItem(it.id)
+    await (it.id < 0 ? runSnippet(-it.id) : copyItem(it.id))
     await hideSelf()
   }, [list, sel])
 
@@ -74,10 +82,13 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
         void hideSelf()
       } else if (mod && e.key.toLowerCase() === 'f' && it) {
         e.preventDefault()
+        // Snippet rows aren't history: nothing to pin or delete.
+        if (it.id < 0) return
         void togglePin(it.id)
         fire((it.pinned ? 'Unpinned “' : 'Pinned “') + it.title + '”')
       } else if (mod && (e.key === 'Backspace' || e.key === 'Delete') && it) {
         e.preventDefault()
+        if (it.id < 0) return
         // The backend refuses these anyway; don't play the animation and lie.
         if (frozen(it, store.collections ?? [])) {
           fire('Locked collection — unlock it to delete')
@@ -112,7 +123,7 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
             ref={input}
             value={q}
             onChange={(e) => { setQ(e.target.value); setSel(0) }}
-            placeholder="Search your clipboard…"
+            placeholder="Search your clipboard, or type a snippet trigger…"
             spellCheck={false}
             style={s('flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:20px;font-weight:420;letter-spacing:-.015em;color:var(--text)')}
           />
@@ -195,7 +206,14 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
                     </div>
                   </div>
                   <div style={s('flex:none;font-size:10.5px;font-weight:500;color:var(--text-3);text-align:right')}>
-                    {relTime(it.ts)}
+                    {/* Snippet rows carry their trigger where the age would be. */}
+                    {it.id < 0 ? (
+                      <span style={s('font-family:ui-monospace,monospace;font-size:10.5px;font-weight:640;color:var(--accent);background:var(--sel);padding:2px 7px;border-radius:5px')}>
+                        {it.app}
+                      </span>
+                    ) : (
+                      relTime(it.ts)
+                    )}
                   </div>
                 </div>
               ))

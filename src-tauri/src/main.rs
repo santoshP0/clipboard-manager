@@ -101,6 +101,12 @@ struct Settings {
     /// Unlimited | 200 | 500 | 1000
     history_limit: String,
     paused: bool,
+    /// Watch typing system-wide and replace snippet triggers. Needs Accessibility.
+    #[serde(default)]
+    expand_snippets: bool,
+    /// We ask for Accessibility once, when the first snippet is saved. Never again.
+    #[serde(default)]
+    asked_accessibility: bool,
 }
 
 impl Default for Settings {
@@ -115,6 +121,8 @@ impl Default for Settings {
             auto_clear: "1 hour".into(),
             history_limit: "Unlimited".into(),
             paused: false,
+            expand_snippets: false,
+            asked_accessibility: false,
         }
     }
 }
@@ -198,6 +206,239 @@ fn set_dock_icon() {
             NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image));
         }
     }
+}
+
+/* ------------------------------------------------------------------ *
+ * snippet expansion (macOS)
+ *
+ * Typing a trigger anywhere replaces it with the snippet body. Reading keys
+ * outside our own windows is exactly what Accessibility permission gates, so
+ * this stays dark until the user turns it on and grants it.
+ *
+ * What's watched is deliberately narrow: a rolling window of the last few
+ * characters, in memory only, cleared the moment it can no longer complete a
+ * trigger. Nothing typed is stored, logged or sent anywhere.
+ * ------------------------------------------------------------------ */
+
+/// True while we're posting our own keystrokes, so the monitor ignores them.
+#[cfg(target_os = "macos")]
+static EXPANDING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the key monitors are live. They can only be registered once
+/// permission exists, which may be long after launch.
+#[cfg(target_os = "macos")]
+static MONITORS_ON: AtomicBool = AtomicBool::new(false);
+
+/// Logged once, the first time a keystroke reaches us.
+#[cfg(target_os = "macos")]
+static SAW_A_KEY: AtomicBool = AtomicBool::new(false);
+
+/// Longest trigger we'll ever match — bounds the buffer.
+#[cfg(target_os = "macos")]
+const MAX_TRIGGER: usize = 40;
+
+#[cfg(target_os = "macos")]
+mod ax {
+    use core_foundation::base::TCFType;
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::string::{CFString, CFStringRef};
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
+    }
+
+    /// Is the app allowed to observe input? Never prompts.
+    pub fn trusted() -> bool {
+        unsafe { AXIsProcessTrusted() }
+    }
+
+    /// Same check, but shows the "open System Settings" prompt when it isn't.
+    /// macOS only ever shows that prompt once per app, hence the manual route
+    /// offered alongside it in Settings.
+    pub fn trusted_prompting() -> bool {
+        unsafe {
+            let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+            let options =
+                CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value().as_CFType())]);
+            let ok = AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef());
+            eprintln!("[ax] prompted, trusted = {ok}");
+            ok
+        }
+    }
+}
+
+/// Send `backspaces` deletes, then type `text` — the actual replacement.
+#[cfg(target_os = "macos")]
+fn type_replacement(text: &str, backspaces: usize) {
+    use core_graphics::event::{CGEvent, CGEventTapLocation};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    const DELETE_KEY: u16 = 51;
+    let Ok(source) = CGEventSource::new(CGEventSourceStateID::HIDSystemState) else {
+        return;
+    };
+
+    let tap = CGEventTapLocation::HID;
+    for _ in 0..backspaces {
+        for down in [true, false] {
+            if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), DELETE_KEY, down) {
+                event.post(tap);
+            }
+        }
+        // Synthetic input posted flat-out gets dropped by some apps.
+        std::thread::sleep(Duration::from_millis(3));
+    }
+
+    // Keycode 0 carrying a unicode payload is how you type arbitrary text.
+    // Chunked: a single event's string buffer is not meant to hold an essay.
+    let chars: Vec<u16> = text.encode_utf16().collect();
+    for chunk in chars.chunks(16) {
+        for down in [true, false] {
+            if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 0, down) {
+                event.set_string_from_utf16_unchecked(chunk);
+                event.post(tap);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(3));
+    }
+}
+
+/// Watch typing outside our own windows and expand snippet triggers.
+#[cfg(target_os = "macos")]
+fn watch_typing(app: AppHandle) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
+    use std::ptr::NonNull;
+    use std::sync::Arc;
+
+    // One rolling window of recent characters. Never persisted.
+    let buffer = Arc::new(Mutex::new(String::new()));
+
+    // Clicking moves the caret, so whatever was half-typed no longer leads
+    // anywhere — drop it rather than let it join up with the next keystrokes.
+    let click_buffer = buffer.clone();
+    let on_click = RcBlock::new(move |_event: NonNull<NSEvent>| {
+        click_buffer.lock().unwrap().clear();
+    });
+    // The returned token *is* the monitor: drop it and it unregisters itself.
+    // Both it and the block have to outlive this function.
+    std::mem::forget(NSEvent::addGlobalMonitorForEventsMatchingMask_handler(
+        NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown,
+        &on_click,
+    ));
+    std::mem::forget(on_click);
+
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| {
+        if EXPANDING.load(Ordering::SeqCst) {
+            return;
+        }
+        let event = unsafe { event.as_ref() };
+
+        // ⌘S and friends aren't text; they're also usually a context switch.
+        let flags = event.modifierFlags();
+        if flags.contains(NSEventModifierFlags::Command)
+            || flags.contains(NSEventModifierFlags::Control)
+        {
+            buffer.lock().unwrap().clear();
+            return;
+        }
+
+        if !SAW_A_KEY.swap(true, Ordering::SeqCst) {
+            eprintln!("[ax] monitor is receiving keystrokes");
+        }
+        let Some(typed) = event.characters() else {
+            return;
+        };
+        let typed = typed.to_string();
+
+        let mut buffer = buffer.lock().unwrap();
+        for ch in typed.chars() {
+            // Control chars end a word; arrows and F-keys arrive as private-use
+            // codepoints and mean the caret just moved.
+            if ch.is_control() || ch >= '\u{F700}' {
+                buffer.clear();
+                continue;
+            }
+            buffer.push(ch);
+        }
+        while buffer.chars().count() > MAX_TRIGGER {
+            let cut = buffer.char_indices().nth(1).map_or(0, |(i, _)| i);
+            buffer.drain(..cut);
+        }
+
+        let state = app.state::<AppState>();
+        let hit = {
+            let store = state.store.lock().unwrap();
+            if !store.settings.expand_snippets {
+                None
+            } else {
+                store
+                    .snippets
+                    .iter()
+                    .filter(|s| !s.trigger.trim().is_empty() && buffer.ends_with(&s.trigger))
+                    // Longest trigger wins, so ";sig" beats ";s".
+                    .max_by_key(|s| s.trigger.chars().count())
+                    .map(|s| (s.id, s.trigger.chars().count(), s.body.clone()))
+            }
+        };
+
+        let Some((id, trigger_len, body)) = hit else {
+            return;
+        };
+        eprintln!("[ax] trigger matched, expanding");
+        buffer.clear();
+        drop(buffer);
+
+        // Off the main thread: the replacement paces itself with sleeps.
+        let app = app.clone();
+        std::thread::spawn(move || {
+            EXPANDING.store(true, Ordering::SeqCst);
+            type_replacement(&body, trigger_len);
+            EXPANDING.store(false, Ordering::SeqCst);
+
+            let state = app.state::<AppState>();
+            {
+                let mut store = state.store.lock().unwrap();
+                if let Some(snippet) = store.snippets.iter_mut().find(|s| s.id == id) {
+                    snippet.uses += 1;
+                }
+            }
+            publish(&app);
+        });
+    });
+
+    // Global monitors only see other apps' events — typing in our own search
+    // box can never trigger an expansion. Returns None until Accessibility is
+    // granted, which is why enabling the setting re-runs this.
+    let token = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler);
+    eprintln!("[ax] key monitor registered = {}", token.is_some());
+    std::mem::forget(token);
+    std::mem::forget(handler);
+}
+
+/// Register the key monitors if we're allowed to and haven't already. Called at
+/// launch and again whenever the setting is touched, so granting permission
+/// takes effect without a restart.
+#[cfg(target_os = "macos")]
+fn ensure_typing_monitor(app: &AppHandle) {
+    if MONITORS_ON.load(Ordering::SeqCst) {
+        return;
+    }
+    if !ax::trusted() {
+        // Logged once per attempt so `[ax]` output always answers "is it the
+        // permission, or the matching?"
+        eprintln!("[ax] not trusted yet — monitors idle");
+        return;
+    }
+    MONITORS_ON.store(true, Ordering::SeqCst);
+    let handle = app.clone();
+    eprintln!("[ax] registering typing monitors");
+    // NSEvent monitors belong to the main run loop.
+    let _ = app.run_on_main_thread(move || watch_typing(handle));
 }
 
 /// Persist, then push the whole store to every window.
@@ -971,13 +1212,59 @@ fn move_items(app: AppHandle, state: State<AppState>, ids: Vec<u64>, coll: Optio
     moved
 }
 
+/// Show this app in Finder, so it can be dragged into the Accessibility list.
+/// macOS won't prompt for an ad-hoc signed app, which makes adding it by hand
+/// the only route in.
+#[tauri::command]
+fn reveal_self() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    // …/Memory.app/Contents/MacOS/memory → …/Memory.app
+    let target = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .unwrap_or(&exe)
+        .to_path_buf();
+    let _ = std::process::Command::new("open")
+        .args(["-R", &target.to_string_lossy()])
+        .spawn();
+}
+
+/// Does the OS let us observe typing yet? Only reports — never prompts. The one
+/// place that prompts is saving a snippet.
+#[tauri::command]
+#[allow(unused_variables)]
+fn accessibility(app: AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let ok = ax::trusted();
+        // The UI polls this, so permission granted over in System Settings
+        // starts the monitors here — no restart, no second click.
+        if ok {
+            ensure_typing_monitor(&app);
+        }
+        ok
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
 #[tauri::command]
 fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) {
     let autostart = settings.launch_at_login;
+    #[cfg(target_os = "macos")]
+    let wants_expansion = settings.expand_snippets;
     {
         let mut store = state.store.lock().unwrap();
         store.settings = settings;
         prune(&mut store);
+    }
+    // Changing a setting never prompts either. If permission already exists the
+    // monitors come up; otherwise the Snippets page shows how to grant it.
+    #[cfg(target_os = "macos")]
+    if wants_expansion {
+        ensure_typing_monitor(&app);
     }
     let manager = app.autolaunch();
     let _ = if autostart {
@@ -990,7 +1277,8 @@ fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) {
 
 #[tauri::command]
 fn add_snippet(app: AppHandle, state: State<AppState>, name: String, trigger: String, body: String) {
-    {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    let ask = {
         let mut store = state.store.lock().unwrap();
         store.next_id += 1;
         let id = store.next_id;
@@ -1001,8 +1289,30 @@ fn add_snippet(app: AppHandle, state: State<AppState>, name: String, trigger: St
             body,
             uses: 0,
         });
-    }
+        // A snippet is only worth writing if it can expand, so the first one
+        // switches expansion on. This is also the only moment the app ever asks
+        // for Accessibility — nowhere else needs it.
+        let first = !store.settings.asked_accessibility;
+        if first {
+            store.settings.expand_snippets = true;
+            store.settings.asked_accessibility = true;
+        }
+        first
+    };
     publish(&app);
+
+    #[cfg(target_os = "macos")]
+    {
+        // Check before asking: an app that re-prompts for permission it already
+        // holds is the amateur move. `ax::trusted()` is the real OS answer.
+        if ax::trusted() {
+            ensure_typing_monitor(&app);
+        } else if ask {
+            ax::trusted_prompting();
+            // Granting from that dialog takes effect without a restart.
+            ensure_typing_monitor(&app);
+        }
+    }
 }
 
 #[tauri::command]
@@ -1054,11 +1364,13 @@ fn show_quick(app: AppHandle) {
 #[tauri::command]
 fn open_path(path: String) {
     // ponytail: two-line shell-out beats pulling in the opener plugin for one button.
+    // Reveal what's on disk; hand anything else (http, x-apple.systempreferences)
+    // to the URL handler — "starts with http" missed every other scheme.
     #[cfg(target_os = "macos")]
-    let (cmd, args): (&str, Vec<&str>) = if path.starts_with("http") {
-        ("open", vec![&path])
-    } else {
+    let (cmd, args): (&str, Vec<&str>) = if Path::new(&path).exists() {
         ("open", vec!["-R", &path])
+    } else {
+        ("open", vec![&path])
     };
     #[cfg(target_os = "linux")]
     let (cmd, args): (&str, Vec<&str>) = ("xdg-open", vec![&path]);
@@ -1191,6 +1503,8 @@ fn main() {
             lock_collection,
             remove_collection,
             move_items,
+            accessibility,
+            reveal_self,
             set_settings,
             add_snippet,
             use_snippet,
@@ -1233,6 +1547,13 @@ fn main() {
 
             app.global_shortcut().register(shortcut)?;
             setup_tray(&handle)?;
+
+            // Launch never asks for anything. If permission is already there,
+            // start watching silently; if it isn't, stay quiet — the only place
+            // that asks is saving a snippet, which is the only place it matters.
+            #[cfg(target_os = "macos")]
+            ensure_typing_monitor(&handle);
+
             watch_clipboard(handle);
             Ok(())
         })
