@@ -166,6 +166,25 @@ fn set_dock_visible(app: &AppHandle, visible: bool) {
     }
 }
 
+/// Paint the Dock tile ourselves. Only a bundled .app picks up icon.icns from
+/// Info.plist; run straight from `cargo`/`tauri dev` and macOS falls back to the
+/// generic "exec" tile, so set the image on NSApplication instead.
+#[cfg(target_os = "macos")]
+fn set_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let data = NSData::with_bytes(include_bytes!("../icons/icon.png"));
+    // SAFETY: main thread (proven by `mtm`), and the PNG bytes are our own.
+    unsafe {
+        if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+            NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image));
+        }
+    }
+}
+
 /// Persist, then push the whole store to every window.
 fn publish(app: &AppHandle) {
     let state = app.state::<AppState>();
@@ -1078,6 +1097,8 @@ fn main() {
 
             // The main window is up at launch, so claim a Dock icon to match.
             set_dock_visible(&handle, true);
+            #[cfg(target_os = "macos")]
+            set_dock_icon();
 
             app.global_shortcut().register(shortcut)?;
             setup_tray(&handle)?;

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { label, useStore, useToast } from './api'
 import Full from './Full'
 import Menu from './Menu'
 import Quick from './Quick'
-import Splash from './Splash'
+import Splash, { FADE_MS } from './Splash'
 import { hexA, s } from './lib'
 import { ErrorState } from './ui'
 
@@ -26,6 +26,8 @@ function useTheme(preference: string) {
 export default function App() {
   const loaded = useStore()
   const { toast, fire } = useToast()
+  const [revealed, setRevealed] = useState(false)
+  const reveal = useCallback(() => setRevealed(true), [])
   const { settings } = loaded.store
   const theme = useTheme(settings.theme)
 
@@ -62,8 +64,18 @@ export default function App() {
         <Menu loaded={loaded} />
       ) : (
         <>
-          <Full loaded={loaded} fire={fire} />
-          <Splash ready={loaded.state !== 'loading'} />
+          {/* Crossfade: the app scales up as the splash scales past it. */}
+          <div
+            style={{
+              ...s('height:100%'),
+              opacity: revealed ? 1 : 0,
+              transform: revealed ? 'none' : 'scale(.97)',
+              transition: `opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms cubic-bezier(.32,.72,0,1)`,
+            }}
+          >
+            <Full loaded={loaded} fire={fire} />
+          </div>
+          <Splash ready={loaded.state !== 'loading'} onLeave={reveal} />
         </>
       )}
 

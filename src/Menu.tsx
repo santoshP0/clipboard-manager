@@ -31,9 +31,7 @@ export default function Menu({ loaded }: { loaded: Loaded }) {
       style={s('width:300px;background:var(--glass);border:.5px solid var(--line);border-radius:14px;overflow:hidden;animation:popIn .2s cubic-bezier(.32,.72,0,1);transform-origin:top right')}
     >
       <div style={s('padding:13px 16px 11px;display:flex;align-items:center;gap:10px;border-bottom:.5px solid var(--line)')}>
-        <div style={s('width:26px;height:26px;border-radius:8px;background:var(--text);display:grid;place-items:center')}>
-          <div style={s('width:10px;height:10px;border:1.8px solid var(--surface);border-radius:3px')} />
-        </div>
+        <img src="/mark.svg" width={26} height={26} alt="" style={s('display:block;border-radius:6px;flex:none')} />
         <div style={{ flex: 1 }}>
           <div style={s('font-size:13px;font-weight:640;letter-spacing:-.01em')}>Memory</div>
           <div style={s('font-size:11px;color:var(--text-2)')}>

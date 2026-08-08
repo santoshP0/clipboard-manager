@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#3A3A3E"/>
+      <stop offset="0.55" stop-color="#1E1E20"/>
+      <stop offset="1" stop-color="#0C0C0E"/>
+    </linearGradient>
+    <linearGradient id="clip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4AA6FF"/>
+      <stop offset="1" stop-color="#0A6FE0"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8E8EC"/>
+    </linearGradient>
+    <filter id="cast" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="26" stdDeviation="30" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <rect x="3" y="3" width="1018" height="1018" rx="228" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="6"/>
+
+  <g filter="url(#cast)">
+    <!-- the history fanned out behind the top item -->
+    <rect x="262" y="230" width="500" height="620" rx="76" fill="#FFFFFF" opacity="0.22" transform="rotate(-11 512 540)"/>
+    <rect x="262" y="230" width="500" height="620" rx="76" fill="#FFFFFF" opacity="0.42" transform="rotate(-5.5 512 540)"/>
+    <rect x="262" y="230" width="500" height="620" rx="76" fill="url(#board)"/>
+  </g>
+
+  <!-- clip -->
+  <rect x="472" y="126" width="80" height="118" rx="40" fill="none" stroke="url(#clip)" stroke-width="34"/>
+  <rect x="392" y="176" width="240" height="112" rx="50" fill="url(#clip)"/>
+
+  <!-- captured lines -->
+  <g fill="#B9B9C2">
+    <rect x="342" y="452" width="340" height="42" rx="21"/>
+    <rect x="342" y="552" width="252" height="42" rx="21"/>
+    <rect x="342" y="652" width="300" height="42" rx="21"/>
+  </g>
+</svg>
