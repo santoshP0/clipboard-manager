@@ -1079,6 +1079,18 @@ function TileButton({
   )
 }
 
+/**
+ * Snippet fields hold exact text that gets typed back out verbatim, so every
+ * macOS convenience — autocorrect, autocapitalise, autocomplete — is corruption.
+ * `;sig` has to stay `;sig`.
+ */
+const literal = {
+  spellCheck: false,
+  autoCorrect: 'off',
+  autoCapitalize: 'off',
+  autoComplete: 'off',
+} as const
+
 function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => void }) {
   const { snippets, settings } = loaded.store
   const [adding, setAdding] = useState(false)
@@ -1144,10 +1156,11 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => voi
       {adding ? (
         <div style={s('border:.5px solid var(--line);border-radius:12px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:9px')}>
           <div style={s('display:flex;gap:9px')}>
-            <input style={field} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <input style={field} placeholder=";trigger" value={form.trigger} onChange={(e) => setForm({ ...form, trigger: e.target.value })} />
+            <input {...literal} style={field} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input {...literal} style={field} placeholder="Trigger" value={form.trigger} onChange={(e) => setForm({ ...form, trigger: e.target.value })} />
           </div>
           <textarea
+            {...literal}
             style={{ ...field, minHeight: 76, fontFamily: 'ui-monospace,SF Mono,monospace', resize: 'vertical' }}
             placeholder="Snippet body"
             value={form.body}
