@@ -83,6 +83,8 @@ export type Settings = {
   expandSnippets: boolean
   /** Asked for Accessibility once already. Must round-trip or we re-ask forever. */
   askedAccessibility: boolean
+  /** What the tray popover lists: a base view, or `c:<id>` for a collection. */
+  menuView: string
 }
 
 export type Store = {
@@ -130,6 +132,19 @@ export const DEFAULT_SETTINGS: Settings = {
   paused: false,
   expandSnippets: false,
   askedAccessibility: false,
+  menuView: 'Recent',
+}
+
+export const MENU_VIEWS = ['Recent', 'Pinned', 'Favorites']
+
+/** A menuView of `c:<id>` means "that collection"; anything else is a base view. */
+export const collViewId = (view: string) =>
+  view.startsWith('c:') ? Number(view.slice(2)) : null
+
+/** The items the tray popover should list, for any menuView. */
+export function menuFilter(items: Item[], view: string): Item[] {
+  const id = collViewId(view)
+  return id == null ? segFilter(items, view) : segFilter(items.filter((x) => x.coll === id), 'Recent')
 }
 
 export const ACCENTS = ['#0a84ff', '#bf5af2', '#ff375f', '#30d158', '#8e8e93']
@@ -263,6 +278,7 @@ const pinnedFirst = (items: Item[]): Item[] =>
 
 export function segFilter(items: Item[], seg: string): Item[] {
   if (seg === 'Recent') return pinnedFirst(items)
+  if (seg === 'Favorites') return pinnedFirst(items.filter((x) => x.fav))
   // Quick Access has no room to browse collections — show everything filed.
   if (seg === 'Collections') return pinnedFirst(items.filter((x) => x.coll != null))
   if (seg === 'Pinned') return pinnedFirst(items.filter((x) => x.pinned))

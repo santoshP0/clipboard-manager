@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { thumbUrl } from './api'
 import { KEY_STYLE, iconPath, s, tint, tintColor, type Item } from './lib'
@@ -291,6 +291,89 @@ export function Segmented({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * Settings dropdown, for choices that grow at runtime — Segmented lays its
+ * options out side by side and falls apart past three or four.
+ */
+export function Picker({
+  options, value, onChange,
+}: {
+  options: { value: string; label: string; dot?: string }[]
+  value: string
+  onChange: (next: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const current = options.find((o) => o.value === value) ?? options[0]
+
+  return (
+    <div ref={box} style={s('position:relative;flex:none')}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          ...s('display:flex;align-items:center;gap:7px;border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:11.5px;font-weight:560;padding:6px 9px 6px 11px;border-radius:9px;background:var(--surface);color:var(--text);min-width:132px'),
+          borderColor: open ? 'var(--accent)' : 'var(--line)',
+          boxShadow: open ? '0 0 0 3px var(--sel)' : 'var(--shadow-sm)',
+        }}
+      >
+        {current?.dot && (
+          <span style={{ ...s('width:7px;height:7px;border-radius:50%;flex:none'), background: current.dot }} />
+        )}
+        <span style={s('flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+          {current?.label}
+        </span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="mem-scroll"
+          style={s('position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:100%;max-height:240px;overflow-y:auto;padding:5px;background:var(--glass);border:.5px solid var(--line);border-radius:10px;box-shadow:var(--shadow);animation:popIn .14s cubic-bezier(.32,.72,0,1);transform-origin:top right')}
+        >
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className="mi"
+              onClick={() => {
+                setOpen(false)
+                onChange(option.value)
+              }}
+              style={s('display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;cursor:pointer;font:inherit;font-size:12px;font-weight:520;color:var(--text);padding:7px 9px;border-radius:7px;text-align:left;white-space:nowrap')}
+            >
+              {option.dot && (
+                <span style={{ ...s('width:7px;height:7px;border-radius:50%;flex:none'), background: option.dot }} />
+              )}
+              <span style={s('flex:1;overflow:hidden;text-overflow:ellipsis')}>{option.label}</span>
+              {option.value === value && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -107,6 +107,13 @@ struct Settings {
     /// We ask for Accessibility once, when the first snippet is saved. Never again.
     #[serde(default)]
     asked_accessibility: bool,
+    /// What the tray popover lists: Recent | Pinned | Favorites
+    #[serde(default = "default_menu_view")]
+    menu_view: String,
+}
+
+fn default_menu_view() -> String {
+    "Recent".into()
 }
 
 impl Default for Settings {
@@ -123,6 +130,7 @@ impl Default for Settings {
             paused: false,
             expand_snippets: false,
             asked_accessibility: false,
+            menu_view: default_menu_view(),
         }
     }
 }

@@ -6,13 +6,13 @@ import {
   removeCollection, moveItems, accessibility, revealSelf, openAccessibilityPane, type Loaded,
 } from './api'
 import {
-  ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, PIN_PATH, SEL_BAR, dayBucket,
+  ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, MENU_VIEWS, PIN_PATH, SEL_BAR, dayBucket,
   exactTime, frozen, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont,
   tintColor, typeLabel, type Collection, type Item, type Settings,
 } from './lib'
 import {
   EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon, Segmented, StackPreview,
-  SwatchPicker, Toggle,
+  SwatchPicker, Toggle, Picker,
 } from './ui'
 import { dissolveElement } from './dissolve'
 import FlameWrap from './flame-wrap'
@@ -399,7 +399,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
               ) : mode === 'about' ? (
                 <About items={store.items} />
               ) : (
-                <SettingsPane settings={settings} patch={patch} />
+                <SettingsPane settings={settings} patch={patch} colls={colls} />
               )}
             </div>
 
@@ -1431,10 +1431,11 @@ function Stats({ items }: { items: Item[] }) {
 }
 
 function SettingsPane({
-  settings, patch,
+  settings, patch, colls,
 }: {
   settings: Settings
   patch: (next: Partial<Settings>) => void
+  colls: Collection[]
 }) {
   const [trusted, setTrusted] = useState(true)
   useEffect(() => {
@@ -1473,6 +1474,24 @@ function SettingsPane({
             <span style={s('flex:none;font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:var(--text-2);background:var(--surface-3);padding:6px 11px;border-radius:8px')}>
               {hotkeyLabel}
             </span>
+          ),
+        },
+        {
+          title: 'Menu bar list',
+          desc: 'What the tray popover shows',
+          control: (
+            <Picker
+              options={[
+                ...MENU_VIEWS.map((v) => ({ value: v, label: v })),
+                ...colls.map((c) => ({
+                  value: `c:${c.id}`,
+                  label: c.name,
+                  dot: collColor(colls, c.id),
+                })),
+              ]}
+              value={settings.menuView ?? 'Recent'}
+              onChange={(menuView) => patch({ menuView })}
+            />
           ),
         },
         {
