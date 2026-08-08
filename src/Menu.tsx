@@ -94,7 +94,7 @@ export default function Menu({ loaded }: { loaded: Loaded }) {
       <div style={s('padding:10px 12px 9px;display:flex;align-items:center;gap:9px;border-bottom:.5px solid var(--line)')}>
         <img src="/mark.svg" width={26} height={26} alt="" style={s('display:block;border-radius:6px;flex:none')} />
         <div style={{ flex: 1 }}>
-          <div style={s('font-size:13px;font-weight:640;letter-spacing:-.01em')}>Memory</div>
+          <div style={s('font-size:13px;font-weight:640;letter-spacing:-.01em')}>Stash</div>
           <div style={s('font-size:11px;color:var(--text-2)')}>
             {store.items.length.toLocaleString()} items · {paused ? 'paused' : 'recording'}
           </div>
@@ -157,7 +157,7 @@ export default function Menu({ loaded }: { loaded: Loaded }) {
             <path d={paused ? 'M8 5v14l11-7z' : 'M8 5v14M16 5v14'} />
           </IconAction>
 
-          <IconAction label="Open Memory" onHint={setHint} onClick={() => void showMain()} hot="var(--accent)">
+          <IconAction label="Open Stash" onHint={setHint} onClick={() => void showMain()} hot="var(--accent)">
             <rect x="3" y="4" width="18" height="16" rx="2" />
             <path d="M3 9h18" />
           </IconAction>
@@ -170,7 +170,7 @@ export default function Menu({ loaded }: { loaded: Loaded }) {
           {/* Quit sits behind a hairline so it isn't the neighbour of Settings. */}
           <div style={s('width:1px;height:17px;background:var(--line);margin:0 4px;flex:none')} />
 
-          <IconAction label="Quit Memory  ⌘Q" onHint={setHint} onClick={() => void quitApp()} tint="var(--red)" hot="var(--red)">
+          <IconAction label="Quit Stash  ⌘Q" onHint={setHint} onClick={() => void quitApp()} tint="var(--red)" hot="var(--red)">
             <path d="M9 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3M16 17l5-5-5-5M21 12H9" />
           </IconAction>
         </div>

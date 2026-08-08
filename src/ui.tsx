@@ -188,7 +188,7 @@ export function EmptyClipboard({ hotkey }: { hotkey: string }) {
       <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.5;max-width:250px')}>
         Copy anything and it appears here instantly. Press{' '}
         <span style={s('font-family:ui-monospace,monospace;font-weight:640;color:var(--text)')}>{hotkey}</span>{' '}
-        to reopen Memory anytime.
+        to reopen Stash anytime.
       </div>
     </div>
   )
@@ -219,7 +219,7 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
       </div>
       <div style={s('font-size:15px;font-weight:620;letter-spacing:-.01em')}>Couldn’t reach the clipboard service</div>
       <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.5;max-width:260px')}>
-        Memory’s background process isn’t responding. Retry, or restart the app.
+        Stash’s background process isn’t responding. Retry, or restart the app.
       </div>
       <div style={s('display:flex;gap:9px;margin-top:2px')}>
         <button

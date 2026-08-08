@@ -1,7 +1,7 @@
 [package]
 name = "memory"
 version = "0.1.0"
-description = "Memory — clipboard manager"
+description = "Stash — clipboard manager"
 edition = "2021"
 
 [build-dependencies]

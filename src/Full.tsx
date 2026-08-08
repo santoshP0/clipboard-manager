@@ -1139,7 +1139,7 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: (msg: string) => voi
             <div style={s('font-size:11.5px;color:var(--text-3);margin-top:2px;line-height:1.45')}>
               {live
                 ? 'Type a trigger in any app and it turns into the body, like iOS Text Replacement.'
-                : 'Add Memory under Privacy & Security → Accessibility. This updates by itself once you do.'}
+                : 'Add Stash under Privacy & Security → Accessibility. This updates by itself once you do.'}
             </div>
           </div>
           {!live && (
@@ -1244,7 +1244,7 @@ function About({ items }: { items: Item[] }) {
       <div style={{ ...s(card), display: 'flex', alignItems: 'center', gap: 16 }}>
         <img src="/mark.svg" width={64} height={64} alt="" style={s('display:block;border-radius:15px;box-shadow:var(--shadow-sm);flex:none')} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={s('font-size:19px;font-weight:700;letter-spacing:-.02em')}>Memory</div>
+          <div style={s('font-size:19px;font-weight:700;letter-spacing:-.02em')}>Stash</div>
           <div style={s('font-size:12.5px;color:var(--text-2);margin-top:2px')}>
             Everything you copy, kept · Version {APP_VERSION}
           </div>
@@ -1464,7 +1464,7 @@ function SettingsPane({
       rows: [
         {
           title: 'Launch at login',
-          desc: 'Start Memory when you log in',
+          desc: 'Start Stash when you log in',
           control: <Toggle on={settings.launchAtLogin} onChange={() => patch({ launchAtLogin: !settings.launchAtLogin })} />,
         },
         {
@@ -1516,7 +1516,7 @@ function SettingsPane({
             ? 'Watches typing system-wide. Needs Accessibility permission.'
             : trusted
               ? 'Ready — type a trigger in any app and it becomes the body'
-              : 'Waiting on Accessibility. Grant it, then quit and reopen Memory.',
+              : 'Waiting on Accessibility. Grant it, then quit and reopen Stash.',
           control: <Toggle on={settings.expandSnippets} onChange={() => void toggleExpand()} />,
         },
       ],
@@ -1600,11 +1600,11 @@ function SettingsPane({
       {needsSetup && (
         <div style={s('border:.5px solid var(--accent);border-radius:13px;background:var(--surface);padding:18px 20px;margin-bottom:24px')}>
           <div style={s('font-size:13.5px;font-weight:640;letter-spacing:-.01em;margin-bottom:6px')}>
-            One step left — add Memory to Accessibility
+            One step left — add Stash to Accessibility
           </div>
           <div style={s('font-size:12.5px;color:var(--text-2);line-height:1.6;margin-bottom:14px')}>
             macOS won’t pop its own prompt for an unsigned app, so add it yourself:
-            open the pane, click <b>+</b>, and pick <b>Memory</b> — the Reveal button puts
+            open the pane, click <b>+</b>, and pick <b>Stash</b> — the Reveal button puts
             it in a Finder window you can drag straight in. This page notices the moment
             it’s granted.
           </div>
@@ -1619,7 +1619,7 @@ function SettingsPane({
               onClick={() => void revealSelf()}
               style={s('border:.5px solid var(--line);cursor:pointer;font:inherit;font-size:12.5px;font-weight:600;color:var(--text);background:var(--surface-2);padding:9px 16px;border-radius:9px')}
             >
-              Reveal Memory in Finder
+              Reveal Stash in Finder
             </button>
           </div>
         </div>

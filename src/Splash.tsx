@@ -52,7 +52,7 @@ export default function Splash({ ready, onLeave }: { ready: boolean; onLeave: ()
         </div>
 
         <div style={s('text-align:center;animation:fadeUp .5s .3s both')}>
-          <div style={s('font-size:22px;font-weight:700;letter-spacing:-.022em')}>Memory</div>
+          <div style={s('font-size:22px;font-weight:700;letter-spacing:-.022em')}>Stash</div>
           <div style={s('font-size:12px;color:var(--text-3);font-weight:500;margin-top:4px;letter-spacing:-.005em')}>
             Everything you copy, kept
           </div>

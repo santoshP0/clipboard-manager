@@ -1228,7 +1228,7 @@ fn reveal_self() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    // …/Memory.app/Contents/MacOS/memory → …/Memory.app
+    // …/Stash.app/Contents/MacOS/memory → …/Stash.app
     let target = exe
         .ancestors()
         .find(|p| p.extension().is_some_and(|e| e == "app"))
@@ -1419,8 +1419,8 @@ fn toggle_quick(app: &AppHandle) {
 }
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Memory", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit Memory", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Stash", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Stash", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit_item])?;
 
     // A stroke-only glyph so macOS can render it as a template (menu-bar) icon.
@@ -1566,7 +1566,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building Memory")
+        .expect("error while building Stash")
         .run(|_app, _event| match _event {
             // Clicking the Dock icon reopens the window.
             #[cfg(target_os = "macos")]

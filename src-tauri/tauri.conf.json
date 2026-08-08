@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Memory",
+  "productName": "Stash",
   "version": "0.1.0",
   "identifier": "app.memory.clipboard",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Memory",
+        "title": "Stash",
         "width": 1120,
         "height": 720,
         "minWidth": 860,
@@ -29,7 +29,7 @@
       },
       {
         "label": "quick",
-        "title": "Memory Quick Access",
+        "title": "Stash Quick Access",
         "width": 760,
         "height": 600,
         "decorations": false,
@@ -44,7 +44,7 @@
       },
       {
         "label": "menu",
-        "title": "Memory Menu",
+        "title": "Stash Menu",
         "width": 300,
         "height": 460,
         "decorations": false,
