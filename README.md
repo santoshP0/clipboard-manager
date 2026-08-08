@@ -1,158 +1,148 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128@2x.png" width="112" alt="Stash">
+<img src="src-tauri/icons/128x128@2x.png" width="120" alt="Stash">
 
 # Stash
 
-**Everything you copy, kept.**
+### Everything you copy, kept.
 
-A clipboard manager for macOS that remembers what you copied, lets you group and
-lock what matters, and expands text shortcuts anywhere you type.
+Your Mac forgets the last thing you copied the moment you copy the next one.
+Stash remembers all of it — searchable, organised, and one keystroke away.
 
-[![Release](https://img.shields.io/github/v/release/santoshP0/clipboard-manager?include_prereleases&label=release)](https://github.com/santoshP0/clipboard-manager/releases)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
-![Built with](https://img.shields.io/badge/built%20with-Tauri%20%2B%20Rust%20%2B%20React-blue)
+[**Download**](https://github.com/santoshP0/clipboard-manager/releases/latest) ·
+[Features](#features) ·
+[Shortcuts](#keyboard-shortcuts) ·
+[Text expansion](#text-expansion)
+
+[![Release](https://img.shields.io/github/v/release/santoshP0/clipboard-manager?include_prereleases&label=download)](https://github.com/santoshP0/clipboard-manager/releases/latest)
+![Platform](https://img.shields.io/badge/macOS%2011%2B-supported-success)
+[![Licence](https://img.shields.io/badge/licence-MIT-success)](LICENSE)
+![No telemetry](https://img.shields.io/badge/telemetry-none-success)
+
+<sub>First launch: right-click the app → **Open** → **Open**. It isn't notarised by Apple, so a plain double-click is blocked. Once only.</sub>
 
 </div>
 
 ---
 
-## What it does
+## The problem
 
-Stash sits in your menu bar and quietly records everything you copy — text,
-links, code, colours, images and files. Press **⌘⇧V** anywhere and your history
-is right there, searchable, one keystroke from the clipboard.
+You copy a link, then copy an address, and the link is gone. You paste the wrong
+thing into the wrong chat. You retype the same email signature for the
+four-hundredth time. You copy a code snippet, get distracted, copy something
+else, and lose it.
 
-Nothing is uploaded. There is no account, no subscription and no telemetry. Your
-history is a single file in your own Application Support folder.
+Stash fixes all four. Press **⌘⇧V**, search, hit Enter — it's on your clipboard.
+
+---
 
 ## Features
 
-**History that understands what you copied.** Items are classified as text,
-link, code, colour, image or file, each with its own preview — syntax-tinted
-code, rendered images, colour swatches, link cards. Copy the same thing twice
-and the existing entry moves to the top instead of piling up a duplicate.
-
-**Quick Access (⌘⇧V).** A floating panel with fuzzy search, arrow-key
-navigation, live preview, and segments for Recent, Pinned, Images, Code, Files,
-Links and Collections. Enter copies and dismisses.
-
-**Collections, with locks.** Group the things you keep coming back to. Lock a
-collection and its contents freeze — no deleting, no moving out, and they're
-skipped by auto-clear and the history limit. The lock is enforced in the Rust
-backend, so ⌘⌫, the tray and Clear history all respect it.
-
-**Snippets and text expansion.** Save text you retype constantly, then either
-copy it from the list, find it by typing its trigger in Quick Access, or — on
-macOS with Accessibility granted — type `;sig` in *any* app and watch it become
-the full text, the way iOS Text Replacement works.
-
-**Undo delete.** Deleted items are held briefly and restorable from the toast.
-Configurable: on/off, and 3 / 5 / 10 seconds.
-
-**Privacy controls.** Copies from password managers are ignored, anything that
-looks like a secret is flagged and auto-cleared on a schedule you choose, and
-you can pause recording from the menu bar at any time.
-
-**Details.** Multi-select with Finder rules (click, ⌘-click, shift-click),
-particle-dissolve delete animation, pinning and favourites, timeline and grid
-views, usage statistics, light/dark themes with five accent colours, launch at
-login, and a menu-bar list you can point at Recent, Pinned, Favorites or any set
-of collections.
-
-## Install
-
-Grab the build for your platform from
-[Releases](https://github.com/santoshP0/clipboard-manager/releases).
-
-| Platform | File |
+| Feature | What it does |
 | --- | --- |
-| macOS (Apple Silicon) | `Stash_1.0.0_aarch64.dmg` |
-| macOS (Intel) | `Stash_1.0.0_x64.dmg` |
-| Windows | `Stash_1.0.0_x64-setup.exe` / `.msi` |
-| Linux | `stash_1.0.0_amd64.deb` / `.AppImage` |
+| **Smart history** | Records everything you copy and recognises what it is — text, links, code, colours, images, files — with the right preview for each. Syntax-tinted code, real image thumbnails, colour swatches, link domains. |
+| **No duplicates** | Copy the same thing twice and the existing entry moves back to the top instead of piling up, keeping the pin, star and collection you gave it. |
+| **Quick Access** `⌘⇧V` | A floating panel over whatever you're doing. Fuzzy search — type `mmry` to find "memory-notes" — live preview, and seven segments: Recent, Pinned, Images, Code, Files, Links, Collections. |
+| **Collections** | Group things you reach for constantly — client details, licence keys, boilerplate — into named collections. |
+| **Locking** | Lock a collection and its contents freeze: can't be deleted, can't be moved out, skipped by auto-clear and the history limit. Enforced in the backend, so `⌘⌫`, the menu bar and Clear history all refuse alike. |
+| **Snippets** | Save text you retype constantly. Copy it from the list, or find it instantly by typing its trigger into Quick Access. |
+| **Text expansion** <sub>macOS</sub> | Type `sig` in any app and it becomes the full text as you type — like iOS Text Replacement. [Setup ↓](#text-expansion) |
+| **Undo delete** | Deleted something you needed? The confirmation offers **Undo**. Configurable: off, or 3 / 5 / 10 seconds. |
+| **Password managers ignored** | Copies from 1Password, Keychain Access, Bitwarden, LastPass, Dashlane and KeePassXC are never recorded. |
+| **Secrets expire** | Anything containing `sk_live_`, `AKIA`, `ghp_`, `-----BEGIN`, `api_key` and similar is flagged and auto-cleared on your schedule — Never, 1 hour or 1 day. |
+| **Pause any time** | One click in the menu bar and Stash stops recording. |
+| **Stays on your Mac** | No account, no sync, no analytics, no crash reporting. No network calls at all. |
+| **Multi-select** | Finder rules — click, `⌘`-click, `⇧`-click. Copy, move or delete a whole batch at once. |
+| **Views** | List, timeline grouped by day, image grid, and usage statistics. |
+| **Appearance** | Light, dark and system themes, five accent colours, and a compact density option. |
+| **Menu bar list** | Point the tray popover at Recent, Pinned, Favorites, or any set of collections. |
 
-**macOS first launch:** the builds are ad-hoc signed, so Gatekeeper blocks a
-plain double-click. Right-click the app → **Open** → **Open**. Once only.
+---
 
-## Text expansion setup (macOS)
+## Keyboard shortcuts
 
-Expansion has to watch your typing outside Stash, which macOS gates behind
-Accessibility permission. Stash asks for it once — when you save your first
-snippet — and never again.
+**Anywhere**
 
-1. **Snippets** → **+ New snippet**, give it a name, a trigger and a body
-2. Grant Accessibility when macOS asks. No prompt? The banner on the Snippets
-   page has an **Open** button, then add Stash with **+**
-3. The banner turns green on its own once the permission lands
-4. Type your trigger anywhere
+| Shortcut | Action |
+| --- | --- |
+| `⌘⇧V` | Open Quick Access |
 
-Start triggers with punctuation — `;sig`, not `sig`. The matcher checks whether
-what you typed *ends with* a trigger, so a bare word would fire inside other
-words (`cod` inside "code").
+**Quick Access**
 
-What's watched is deliberately narrow: a rolling 40-character window held in
-memory, cleared the moment it can't complete a trigger. Nothing typed is stored,
-logged or sent anywhere. The whole feature stays dark until you turn it on.
+| Shortcut | Action |
+| --- | --- |
+| `↑` `↓` | Move through the list |
+| `Enter` | Copy and close |
+| `Esc` | Close |
+| `⌘F` | Pin / unpin the highlighted item |
+| `⌘⌫` | Delete the highlighted item |
+| `⌘1`–`⌘7` | Jump to a segment |
 
-## Platform support
+**Main window**
 
-The app builds and runs everywhere, but some features need macOS APIs that have
-no cross-platform equivalent yet. Anything unavailable is hidden rather than
-shown broken.
+| Shortcut | Action |
+| --- | --- |
+| `⌘A` | Select every item in the list |
+| `⌘⌫` | Delete the selection |
+| `⌘,` | Settings |
+| Click / `⌘`-click / `⇧`-click | Select · add to selection · extend range |
+| Double-click | Copy |
 
-| | macOS | Windows | Linux |
-| --- | :---: | :---: | :---: |
-| Clipboard history, search, previews | ✅ | ✅ | ✅ |
-| Quick Access, global hotkey, tray | ✅ | ✅ | ✅ |
-| Collections, locking, snippets | ✅ | ✅ | ✅ |
-| Undo delete, themes, statistics | ✅ | ✅ | ✅ |
-| Snippet expansion as you type | ✅ | — | — |
-| Source app detection | ✅ | — | — |
-| Copying files from the file manager | ✅ | — | — |
+---
+
+## Text expansion
+
+Type a short trigger, get the full text — in any app, as you type.
+
+| | |
+| --- | --- |
+| **You type** | `sig` |
+| **You get** | `Santosh Kumar`<br>`Engineering · santosh@example.com` |
+
+Stash types it for you in other apps, which macOS gates behind Accessibility
+permission. It asks **once**, when you save your first snippet, and never again.
+
+| Step | What to do |
+| --- | --- |
+| **1** | **Snippets → + New snippet.** Name it, give it a trigger like `sig`, paste the text it should become. |
+| **2** | **Grant Accessibility** when macOS asks. No prompt? The banner on the Snippets page has an **Open** button — add Stash there with **+**. |
+| **3** | **Wait for green.** The banner checks continuously and turns green the moment permission lands. No restart. |
+| **4** | **Type your trigger** anywhere. |
+
+**Rules worth knowing**
+
+| | |
+| --- | --- |
+| **What's watched** | A rolling 40-character window, in memory only. Cleared the moment it can't complete a trigger, and again on every click, arrow key and `⌘`-shortcut. |
+| **What's stored** | Nothing. Not written to disk, not logged, not transmitted. |
+| **Off by default** | The feature stays completely dark until you enable it. Turning it off stops the watching. |
+| **macOS only** | Windows and Linux have no equivalent API; the option is hidden there rather than shown broken. |
+
+---
 
 ## Build from source
 
-Needs [Bun](https://bun.sh), [Rust](https://rustup.rs) and the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform.
+Requires [Bun](https://bun.sh), [Rust](https://rustup.rs) and the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```sh
 bun install
-bun run app          # dev, with frontend hot reload
+bun run app          # dev, frontend hot-reloads
 bun run app:build    # release bundle
+bun run app:ax       # signed debug bundle — needed to test expansion
 ```
 
-macOS signing: `tauri.conf.json` references a local self-signed identity called
-`Memory Dev`. Either create one in Keychain Access, or drop the `macOS.signingIdentity`
-key to fall back to ad-hoc signing.
+`app:ax` exists because macOS won't grant Accessibility to the bare binary
+`tauri dev` produces; expansion can only be tested from a real signed `.app`.
 
-Testing expansion in dev needs a real `.app` bundle — macOS won't grant
-Accessibility to the bare binary `tauri dev` produces:
+macOS signing uses a local self-signed identity named `Memory Dev`. Create one
+in Keychain Access, or remove `bundle.macOS.signingIdentity` from
+`src-tauri/tauri.conf.json` to fall back to ad-hoc signing.
 
-```sh
-bun run app:ax       # signed debug bundle, then launches it
-```
+## Licence
 
-## How it's built
+[MIT](LICENSE) — free to use, modify and distribute.
 
-Rust does the work that has to be native — clipboard polling, the store, tray
-and window management, the pasteboard flavours, and the key monitor behind
-expansion. React draws everything, with the two halves talking over Tauri
-commands and a single `store` event that pushes the whole state to every window.
-
-The store is one JSON file, rewritten on each capture. That's honest for
-hundreds of items; SQLite is the upgrade when history outgrows it.
-
-```
-src/            React — Full (main window), Quick, Menu (tray popover), shared ui
-src-tauri/src/  Rust — capture, store, commands, tray, snippet expansion
-```
-
-## Releasing
-
-Push a tag and GitHub Actions builds all four artifacts and opens a draft
-release:
-
-```sh
-git tag v1.0.0 && git push origin --tags
-```
+<div align="center">
+<sub>Built with Tauri, Rust and React.</sub>
+</div>
