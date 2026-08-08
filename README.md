@@ -127,13 +127,8 @@ Requires [Bun](https://bun.sh), [Rust](https://rustup.rs) and the
 
 ```sh
 bun install
-bun run app          # dev, frontend hot-reloads
-bun run app:build    # release bundle
-bun run app:ax       # signed debug bundle — needed to test expansion
+bun run app
 ```
-
-`app:ax` exists because macOS won't grant Accessibility to the bare binary
-`tauri dev` produces; expansion can only be tested from a real signed `.app`.
 
 macOS signing uses a local self-signed identity named `Memory Dev`. Create one
 in Keychain Access, or remove `bundle.macOS.signingIdentity` from
