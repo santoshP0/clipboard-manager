@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
   addSnippet, copyItem, isMac, openPath, removeItem, removeSnippet, saveSettings, thumbUrl,
-  copyFiles, copyText, toggleFav, togglePin, runSnippet, useGoto, type Loaded,
+  copyFiles, copyText, toggleFav, togglePin, runSnippet, useGoto, addCollection, lockCollection,
+  removeCollection, moveItems, type Loaded,
 } from './api'
 import {
   ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, PIN_PATH, SEL_BAR, dayBucket,
-  exactTime, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont, tintColor,
-  typeLabel, type Item, type Settings,
+  exactTime, frozen, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont,
+  tintColor, typeLabel, type Collection, type Item, type Settings,
 } from './lib'
 import {
   EmptyClipboard, IconBox, LoadingRows, NoMatches, Preview, SearchIcon, Segmented, StackPreview,
@@ -61,7 +62,7 @@ const SUBTITLE: Record<string, string> = {
   Images: 'Visual clipboard history',
   Files: 'Copied files & paths',
   Code: 'Snippets with syntax',
-  Collections: 'Grouped by source app',
+  Collections: 'Your groups — lock one to protect what is in it',
   Links: 'URLs you’ve copied',
   Snippets: 'Reusable expansions',
   Statistics: 'Your clipboard, quantified',
@@ -99,14 +100,16 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
   const [fq, setFq] = useState('')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [anchor, setAnchor] = useState(0)
-  const [collection, setCollection] = useState<string | null>(null)
+  const [collection, setCollection] = useState<number | null>(null)
 
   useGoto(useCallback((next: string) => setSection(next), []))
 
-  const inCollection = section === 'Collections' && collection !== null
+  const colls = store.collections ?? []
+  const open = colls.find((c) => c.id === collection)
+  const inCollection = section === 'Collections' && !!open
   const mode = inCollection ? 'list' : (MODE[section] ?? 'list')
   const base = inCollection
-    ? store.items.filter((x) => x.app === collection)
+    ? sectionFilter(store.items.filter((x) => x.coll === open.id), 'History')
     : sectionFilter(store.items, section)
   const list = base.filter((x) => fz(fq, hay(x)))
   const sel = Math.min(anchor, Math.max(0, list.length - 1))
@@ -173,8 +176,27 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
     fire('Copied ' + targets.length + ' items to clipboard')
   }
 
-  const deleteMany = () => {
+  /** Locked collections freeze their contents — the backend refuses too. */
+  const lockedTargets = targets.filter((t) => frozen(t, colls))
+  const canDelete = targets.length > 0 && lockedTargets.length === 0
+  // The collection every target shares — undefined when they disagree.
+  const sharedColl = targets.every((t) => (t.coll ?? null) === (targets[0].coll ?? null))
+    ? (targets[0]?.coll ?? null)
+    : undefined
+
+  const moveTo = async (coll: number | null) => {
     if (!targets.length) return
+    const moved = await moveItems(targets.map((t) => t.id), coll)
+    const where = coll === null ? 'History' : colls.find((c) => c.id === coll)?.name
+    fire(moved ? `Moved ${moved} item${moved > 1 ? 's' : ''} to ${where}` : 'Collection is locked')
+    clearSel()
+  }
+
+  const deleteMany = () => {
+    if (!canDelete) {
+      if (lockedTargets.length) fire('Locked collection — unlock it to delete')
+      return
+    }
     // Scatter the rows before the store drops them.
     for (const t of targets) {
       const row = document.querySelector<HTMLElement>(`[data-row="${t.id}"]`)
@@ -261,13 +283,32 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                 Collections
               </button>
             )}
-            <div style={s('font-size:19px;font-weight:680;letter-spacing:-.02em')}>
-              {inCollection ? collection : section}
+            <div style={s('font-size:19px;font-weight:680;letter-spacing:-.02em;display:flex;align-items:center;gap:8px')}>
+              {open ? open.name : section}
+              {open?.locked && <LockIcon size={15} />}
             </div>
             <div style={s('font-size:12px;color:var(--text-3);font-weight:500;margin-top:2px')}>
-              {inCollection ? `${base.length} items from ${collection}` : (SUBTITLE[section] ?? '')}
+              {open
+                ? `${base.length} items${open.locked ? ' · locked' : ''}`
+                : (SUBTITLE[section] ?? '')}
             </div>
             <div style={s('margin-left:auto;display:flex;align-items:center;gap:10px')}>
+              {open && (
+                <button
+                  onClick={() => {
+                    void lockCollection(open.id)
+                    fire(open.locked ? `Unlocked “${open.name}”` : `Locked “${open.name}”`)
+                  }}
+                  style={{
+                    ...s('border:0;cursor:pointer;font:inherit;font-size:12.5px;font-weight:560;padding:6px 11px;border-radius:9px;display:flex;align-items:center;gap:6px'),
+                    background: open.locked ? 'var(--sel)' : 'var(--surface-3)',
+                    color: open.locked ? 'var(--accent)' : 'var(--text-2)',
+                  }}
+                >
+                  <LockIcon size={13} open={!open.locked} />
+                  {open.locked ? 'Locked' : 'Lock'}
+                </button>
+              )}
               <div style={s('display:flex;align-items:center;gap:8px;background:var(--surface-3);padding:6px 11px;border-radius:9px;width:200px')}>
                 <SearchIcon size={14} />
                 <input
@@ -348,7 +389,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
               ) : mode === 'grid' ? (
                 <Grid items={store.items} onCopy={copy} />
               ) : mode === 'collections' ? (
-                <Collections items={store.items} onOpen={setCollection} />
+                <Collections items={store.items} colls={colls} onOpen={setCollection} fire={fire} />
               ) : mode === 'snippets' ? (
                 <Snippets loaded={loaded} fire={fire} />
               ) : mode === 'stats' ? (
@@ -453,6 +494,31 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                   </>
                 )}
 
+                {targets.length > 0 && (
+                  <>
+                    <div style={s('font-size:11px;font-weight:640;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px')}>
+                      Collection
+                    </div>
+                    <CollectionPicker
+                      colls={colls}
+                      items={store.items}
+                      current={sharedColl}
+                      locked={lockedTargets.length > 0}
+                      count={targets.length}
+                      onMove={(coll) => void moveTo(coll)}
+                      onCreate={async (name) => {
+                        const id = await addCollection(name)
+                        if (id) await moveTo(id)
+                      }}
+                    />
+                    <div style={s('font-size:11px;color:var(--text-3);margin:8px 0 18px;line-height:1.4')}>
+                      {lockedTargets.length
+                        ? 'Locked — unlock the collection to move or delete.'
+                        : 'Filed items survive auto-clear and the history limit.'}
+                    </div>
+                  </>
+                )}
+
                 {canOpen && (
                   <>
                     <div style={s('font-size:11px;font-weight:640;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px')}>
@@ -479,6 +545,12 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                     action, so a mis-aimed click on Copy can't land on Delete. */}
                 <div style={s('margin-top:auto;padding-top:26px')}>
                   <div style={s('height:.5px;background:var(--line);margin-bottom:16px')} />
+                  {!canDelete ? (
+                    <div style={s('display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:540;color:var(--text-3);padding:12px;border:.5px dashed var(--line);border-radius:9px')}>
+                      <LockIcon size={13} />
+                      Protected by a locked collection
+                    </div>
+                  ) : (
                   <FlameWrap
                     color={[1, 0.22, 0.06]}
                     intensity={0.55}
@@ -501,6 +573,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: (msg: str
                       danger
                     />
                   </FlameWrap>
+                  )}
                 </div>
               </div>
             )}
@@ -683,49 +756,322 @@ function Grid({ items, onCopy }: { items: Item[]; onCopy: (it: Item) => void }) 
   )
 }
 
-/** ponytail: a "collection" is the app an item came from — real grouping, and no tagging UI to build. */
-function Collections({ items, onOpen }: { items: Item[]; onOpen: (app: string) => void }) {
-  const byApp = new Map<string, Item[]>()
-  for (const it of items) {
-    const bucket = byApp.get(it.app) ?? []
-    bucket.push(it)
-    byApp.set(it.app, bucket)
-  }
-  const groups = [...byApp.entries()].sort((a, b) => b[1].length - a[1].length)
+/** Colour a collection carries everywhere it appears. */
+const collColor = (colls: Collection[], id: number) =>
+  TINTS[Math.max(0, colls.findIndex((c) => c.id === id)) % TINTS.length][1]
 
-  if (groups.length === 0) {
-    return (
-      <div style={{ height: 320 }}>
-        <EmptyClipboard hotkey={hotkeyLabel} />
-      </div>
-    )
+/**
+ * Move-to-collection menu. A native <select> can't carry item counts, lock
+ * badges or a "new collection" row, so this is a real popover.
+ */
+function CollectionPicker({
+  colls, items, current, locked, count, onMove, onCreate,
+}: {
+  colls: Collection[]
+  items: Item[]
+  /** Collection shared by every target — null when unfiled, undefined when mixed. */
+  current: number | null | undefined
+  locked: boolean
+  count: number
+  onMove: (coll: number | null) => void
+  onCreate: (name: string) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [up, setUp] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const close = () => {
+    setOpen(false)
+    setDraft(null)
+  }
+  const choose = (id: number | null) => {
+    close()
+    onMove(id)
+  }
+  const create = async () => {
+    const name = (draft ?? '').trim()
+    close()
+    if (name) await onCreate(name)
+  }
+
+  const here = current == null ? undefined : colls.find((c) => c.id === current)
+  const label = locked
+    ? here?.name
+    : here
+      ? here.name
+      : current === undefined
+        ? 'Mixed — pick one'
+        : 'Move to collection…'
+
+  const row = 'display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:540;width:100%;border:0;background:transparent;color:var(--text);font-family:inherit;text-align:left'
+
+  return (
+    <div ref={box} style={s('position:relative')}>
+      <button
+        disabled={locked}
+        onClick={() => {
+          // Drop upward when the panel bottom is closer than the menu is tall.
+          const rect = box.current?.getBoundingClientRect()
+          if (rect) setUp(window.innerHeight - rect.bottom < 280 && rect.top > 280)
+          setOpen((v) => !v)
+        }}
+        style={{
+          ...s('width:100%;display:flex;align-items:center;gap:9px;font:inherit;font-size:12.5px;font-weight:560;padding:9px 11px;border:.5px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);outline:0;text-align:left'),
+          cursor: locked ? 'default' : 'pointer',
+          opacity: locked ? 0.75 : 1,
+          boxShadow: open ? '0 0 0 3px var(--sel)' : 'var(--shadow-sm)',
+          borderColor: open ? 'var(--accent)' : 'var(--line)',
+        }}
+      >
+        {locked ? (
+          <span style={{ color: 'var(--accent)', display: 'flex' }}><LockIcon size={13} /></span>
+        ) : here ? (
+          <span style={{ ...s('width:8px;height:8px;border-radius:50%;flex:none'), background: collColor(colls, here.id) }} />
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+            <path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          </svg>
+        )}
+        <span style={{ ...s('flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'), color: here || locked ? 'var(--text)' : 'var(--text-3)' }}>
+          {label}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="mem-scroll"
+          style={{
+            ...s('position:absolute;left:0;right:0;z-index:60;max-height:264px;overflow-y:auto;padding:6px;background:var(--glass);border:.5px solid var(--line);border-radius:11px;box-shadow:var(--shadow);animation:popIn .14s cubic-bezier(.32,.72,0,1)'),
+            [up ? 'bottom' : 'top']: 'calc(100% + 6px)',
+            transformOrigin: up ? 'bottom center' : 'top center',
+          }}
+        >
+          <div style={s('font-size:10px;font-weight:660;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);padding:6px 10px 5px')}>
+            Move {count > 1 ? count + ' items' : 'item'} to
+          </div>
+
+          {colls.length === 0 && draft === null && (
+            <div style={s('font-size:12px;color:var(--text-3);padding:6px 10px 10px;line-height:1.4')}>
+              No collections yet — make the first one below.
+            </div>
+          )}
+
+          {colls.map((c) => (
+            <button key={c.id} className="mi" onClick={() => choose(c.id)} style={s(row)}>
+              <span style={{ ...s('width:8px;height:8px;border-radius:50%;flex:none'), background: collColor(colls, c.id) }} />
+              <span style={s('flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{c.name}</span>
+              {c.locked && <span style={{ color: 'var(--text-3)', display: 'flex' }}><LockIcon size={11} /></span>}
+              <span style={s('font-size:11px;color:var(--text-3);font-weight:500')}>
+                {items.filter((x) => x.coll === c.id).length}
+              </span>
+              {here?.id === c.id && (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+              )}
+            </button>
+          ))}
+
+          <div style={s('height:.5px;background:var(--line);margin:5px 4px')} />
+
+          {here && (
+            <button className="mi" onClick={() => choose(null)} style={s(row)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+                <path d="M9 12h6M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18" />
+              </svg>
+              <span style={{ color: 'var(--text-2)' }}>Remove from collection</span>
+            </button>
+          )}
+
+          {draft === null ? (
+            <button className="mi" onClick={() => setDraft('')} style={s(row)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" style={{ flex: 'none' }}>
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span style={{ color: 'var(--accent)' }}>New collection…</span>
+            </button>
+          ) : (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void create()
+                if (e.key === 'Escape') setDraft(null)
+              }}
+              placeholder="Name, then Enter"
+              spellCheck={false}
+              style={s('width:100%;margin:2px 0;border:.5px solid var(--accent);border-radius:8px;padding:8px 10px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--text);outline:0')}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Padlock — shackle lifts off the body when `open`. */
+function LockIcon({ size = 14, open = false }: { size?: number; open?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2.5" />
+      <path d={open ? 'M8 11V7a4 4 0 0 1 7.5-2' : 'M8 11V7a4 4 0 0 1 8 0v4'} />
+    </svg>
+  )
+}
+
+/** Collections the user makes and files items into. Lock freezes the contents. */
+function Collections({
+  items, colls, onOpen, fire,
+}: {
+  items: Item[]
+  colls: Collection[]
+  onOpen: (id: number) => void
+  fire: (msg: string) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  const create = async () => {
+    const name = (draft ?? '').trim()
+    setDraft(null)
+    if (!name) return
+    await addCollection(name)
+    fire(`Created “${name}”`)
   }
 
   return (
     <div style={s('padding:18px;display:grid;grid-template-columns:repeat(2,1fr);gap:14px')}>
-      {groups.map(([app, group], i) => {
+      {colls.map((coll, i) => {
         const [bg, color] = TINTS[i % TINTS.length]
+        const group = items.filter((x) => x.coll === coll.id)
         const chips = [...new Set(group.map((g) => tintColor(g.kind)))].slice(0, 3)
         return (
-          <div key={app} onClick={() => onOpen(app)} className="tile" style={s('border:.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;background:var(--surface)')}>
+          <div key={coll.id} onClick={() => onOpen(coll.id)} className="tile" style={s('border:.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;background:var(--surface)')}>
             <div style={s('display:flex;align-items:center;gap:11px;margin-bottom:14px')}>
               <div style={{ ...s('width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:14px;font-weight:700'), background: bg, color }}>
-                {app.slice(0, 1).toUpperCase()}
+                {coll.name.slice(0, 1).toUpperCase()}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={s('font-size:14px;font-weight:620;letter-spacing:-.01em')}>{app}</div>
-                <div style={s('font-size:11.5px;color:var(--text-3)')}>{group.length} items</div>
+              <div style={s('flex:1;min-width:0')}>
+                <div style={s('font-size:14px;font-weight:620;letter-spacing:-.01em;display:flex;align-items:center;gap:6px')}>
+                  <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{coll.name}</span>
+                  {coll.locked && <span style={{ color: 'var(--accent)', flex: 'none' }}><LockIcon size={12} /></span>}
+                </div>
+                <div style={s('font-size:11.5px;color:var(--text-3)')}>
+                  {group.length} items{coll.locked ? ' · locked' : ''}
+                </div>
+              </div>
+              <div style={s('display:flex;gap:4px;flex:none')} onClick={(e) => e.stopPropagation()}>
+                <TileButton
+                  title={coll.locked ? 'Unlock' : 'Lock'}
+                  active={coll.locked}
+                  onClick={() => {
+                    void lockCollection(coll.id)
+                    fire(coll.locked ? `Unlocked “${coll.name}”` : `Locked “${coll.name}”`)
+                  }}
+                >
+                  <LockIcon size={13} open={!coll.locked} />
+                </TileButton>
+                {!coll.locked && (
+                  <TileButton
+                    title="Delete collection"
+                    onClick={() => {
+                      void removeCollection(coll.id)
+                      fire(`Deleted “${coll.name}” · items kept`)
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13" />
+                    </svg>
+                  </TileButton>
+                )}
               </div>
             </div>
             <div style={s('display:flex;gap:6px')}>
-              {chips.map((c) => (
+              {(chips.length ? chips : ['var(--surface-3)']).map((c) => (
                 <div key={c} style={{ flex: 1, height: 6, borderRadius: 4, background: c }} />
               ))}
             </div>
           </div>
         )
       })}
+
+      {draft === null ? (
+        <div
+          onClick={() => setDraft('')}
+          className="tile"
+          style={s('border:1px dashed var(--line);border-radius:14px;padding:18px;cursor:pointer;display:flex;align-items:center;gap:11px;color:var(--text-2);min-height:96px')}
+        >
+          <div style={s('width:34px;height:34px;border-radius:9px;background:var(--surface-3);display:grid;place-items:center;flex:none')}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </div>
+          <div>
+            <div style={s('font-size:14px;font-weight:620;letter-spacing:-.01em;color:var(--text)')}>New collection</div>
+            <div style={s('font-size:11.5px;color:var(--text-3)')}>Group what matters</div>
+          </div>
+        </div>
+      ) : (
+        <div style={s('border:.5px solid var(--accent);border-radius:14px;padding:18px;background:var(--surface);min-height:96px;display:flex;flex-direction:column;justify-content:center;gap:10px')}>
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void create()
+              if (e.key === 'Escape') setDraft(null)
+            }}
+            onBlur={() => void create()}
+            placeholder="Collection name"
+            spellCheck={false}
+            style={s('border:.5px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px;background:var(--surface-2);color:var(--text);outline:0;width:100%')}
+          />
+          <div style={s('font-size:11px;color:var(--text-3)')}>Enter to create · Esc to cancel</div>
+        </div>
+      )}
     </div>
+  )
+}
+
+/** Small square button that rides in a tile's corner. */
+function TileButton({
+  title, onClick, active, children,
+}: {
+  title: string
+  onClick: () => void
+  active?: boolean
+  children: ReactNode
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="wbtn"
+      style={{
+        ...s('width:26px;height:26px;border:0;border-radius:7px;cursor:pointer;display:grid;place-items:center;background:transparent'),
+        color: active ? 'var(--accent)' : 'var(--text-3)',
+      }}
+    >
+      {children}
+    </button>
   )
 }
 

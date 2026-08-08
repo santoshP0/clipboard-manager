@@ -60,7 +60,12 @@ export type Item = {
   pinned: boolean
   fav: boolean
   secret: boolean
+  /** Collection this item is filed into. One collection per item. */
+  coll?: number | null
 }
+
+/** Locked freezes the contents: no deleting, no moving out. */
+export type Collection = { id: number; name: string; locked: boolean }
 
 export type Snippet = { id: number; trigger: string; name: string; body: string; uses: number }
 
@@ -79,9 +84,14 @@ export type Settings = {
 export type Store = {
   items: Item[]
   snippets: Snippet[]
+  collections: Collection[]
   settings: Settings
   nextId: number
 }
+
+/** True when this item sits in a locked collection. */
+export const frozen = (it: Item, colls: Collection[]) =>
+  it.coll != null && colls.some((c) => c.id === it.coll && c.locked)
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -225,7 +235,9 @@ const pinnedFirst = (items: Item[]): Item[] =>
   [...items].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.ts - a.ts)
 
 export function segFilter(items: Item[], seg: string): Item[] {
-  if (seg === 'Recent' || seg === 'Collections') return pinnedFirst(items)
+  if (seg === 'Recent') return pinnedFirst(items)
+  // Quick Access has no room to browse collections — show everything filed.
+  if (seg === 'Collections') return pinnedFirst(items.filter((x) => x.coll != null))
   if (seg === 'Pinned') return pinnedFirst(items.filter((x) => x.pinned))
   return pinnedFirst(items.filter((x) => x.kind === SEG_KIND[seg]))
 }

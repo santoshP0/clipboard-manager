@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -62,6 +63,18 @@ struct Item {
     pinned: bool,
     fav: bool,
     secret: bool,
+    /// Collection this item was filed into, if any. One collection per item.
+    #[serde(default)]
+    coll: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Collection {
+    id: u64,
+    name: String,
+    /// Frozen: its items can't be deleted or moved out until it's unlocked.
+    locked: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -112,6 +125,8 @@ struct Store {
     items: Vec<Item>,
     #[serde(default)]
     snippets: Vec<Snippet>,
+    #[serde(default)]
+    collections: Vec<Collection>,
     #[serde(default)]
     settings: Settings,
     #[serde(default)]
@@ -301,6 +316,7 @@ fn file_item(id: u64, path: &str, app_name: String, dir: &PathBuf) -> Item {
         pinned: false,
         fav: false,
         secret: false,
+        coll: None,
     };
 
     if IMAGE_EXTS.contains(&ext.as_str()) {
@@ -419,6 +435,7 @@ fn text_item(id: u64, text: &str, app_name: String) -> Item {
         pinned: false,
         fav: false,
         secret: looks_secret(text),
+        coll: None,
     };
 
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
@@ -478,6 +495,30 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
+/// Ids of the locked collections. Their items survive delete, Clear and prune.
+fn locked_colls(store: &Store) -> HashSet<u64> {
+    store
+        .collections
+        .iter()
+        .filter(|c| c.locked)
+        .map(|c| c.id)
+        .collect()
+}
+
+fn is_frozen(item: &Item, locked: &HashSet<u64>) -> bool {
+    item.coll.is_some_and(|c| locked.contains(&c))
+}
+
+/// Delete the preview PNG we generated for an item. Never touches `path`: for a
+/// Finder copy that points at the user's own file, which is not ours to remove.
+fn drop_thumb(dir: &Path, item: &Item) {
+    if let Some(thumb) = &item.thumb {
+        if Path::new(thumb).starts_with(dir) {
+            let _ = std::fs::remove_file(thumb);
+        }
+    }
+}
+
 /// Drop items the retention settings say we should no longer keep.
 fn prune(store: &mut Store) {
     let limit = store.settings.history_limit.parse::<usize>().ok();
@@ -487,16 +528,17 @@ fn prune(store: &mut Store) {
         _ => None,
     };
     let now = now_ms();
+    let locked = locked_colls(store);
 
     if let Some(window) = clear_after {
-        store
-            .items
-            .retain(|i| !i.secret || i.pinned || now.saturating_sub(i.ts) < window);
+        store.items.retain(|i| {
+            !i.secret || i.pinned || is_frozen(i, &locked) || now.saturating_sub(i.ts) < window
+        });
     }
     if let Some(limit) = limit {
         let mut kept = 0;
         store.items.retain(|i| {
-            if i.pinned {
+            if i.pinned || is_frozen(i, &locked) {
                 return true;
             }
             kept += 1;
@@ -676,6 +718,7 @@ fn capture_image(app: &AppHandle, state: &State<AppState>) -> bool {
             pinned: false,
             fav: false,
             secret: false,
+            coll: None,
         },
     );
     true
@@ -821,27 +864,111 @@ fn toggle_fav(app: AppHandle, state: State<AppState>, id: u64) {
 }
 
 #[tauri::command]
-fn remove_item(app: AppHandle, state: State<AppState>, id: u64) {
+fn remove_item(app: AppHandle, state: State<AppState>, id: u64) -> bool {
     {
         let mut store = state.store.lock().unwrap();
-        if let Some(item) = store.items.iter().find(|i| i.id == id) {
-            if let (Some(path), "image") = (item.path.clone(), item.kind.as_str()) {
-                let _ = std::fs::remove_file(path);
-            }
+        let locked = locked_colls(&store);
+        match store.items.iter().find(|i| i.id == id) {
+            // The UI hides Delete for these, but ⌘⌫ and the tray reach here too.
+            Some(item) if is_frozen(item, &locked) => return false,
+            Some(item) => drop_thumb(&state.dir, item),
+            None => return false,
         }
         store.items.retain(|i| i.id != id);
     }
     publish(&app);
+    true
 }
 
 #[tauri::command]
 fn clear_history(app: AppHandle, state: State<AppState>) {
     {
         let mut store = state.store.lock().unwrap();
-        let _ = std::fs::remove_dir_all(state.dir.join("images"));
-        store.items.retain(|i| i.pinned);
+        let locked = locked_colls(&store);
+        let keep = |i: &Item| i.pinned || is_frozen(i, &locked);
+        // Per-item, not remove_dir_all: the previews of whatever survives here
+        // have to survive with it.
+        for item in store.items.iter().filter(|i| !keep(i)) {
+            drop_thumb(&state.dir, item);
+        }
+        store.items.retain(keep);
     }
     publish(&app);
+}
+
+/* ------------------------------------------------------------------ *
+ * collections
+ * ------------------------------------------------------------------ */
+
+#[tauri::command]
+fn add_collection(app: AppHandle, state: State<AppState>, name: String) -> u64 {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return 0;
+    }
+    let id;
+    {
+        let mut store = state.store.lock().unwrap();
+        store.next_id += 1;
+        id = store.next_id;
+        store.collections.push(Collection {
+            id,
+            name,
+            locked: false,
+        });
+    }
+    publish(&app);
+    id
+}
+
+/// Flip the lock. Locked freezes the contents: no deleting, no moving out.
+#[tauri::command]
+fn lock_collection(app: AppHandle, state: State<AppState>, id: u64) {
+    {
+        let mut store = state.store.lock().unwrap();
+        let Some(coll) = store.collections.iter_mut().find(|c| c.id == id) else {
+            return;
+        };
+        coll.locked = !coll.locked;
+    }
+    publish(&app);
+}
+
+/// Delete the collection itself. Its items survive, back in the general history.
+#[tauri::command]
+fn remove_collection(app: AppHandle, state: State<AppState>, id: u64) -> bool {
+    {
+        let mut store = state.store.lock().unwrap();
+        if store.collections.iter().any(|c| c.id == id && c.locked) {
+            return false;
+        }
+        store.collections.retain(|c| c.id != id);
+        for item in store.items.iter_mut().filter(|i| i.coll == Some(id)) {
+            item.coll = None;
+        }
+    }
+    publish(&app);
+    true
+}
+
+/// File items into a collection, or back out of one with `coll: None`.
+#[tauri::command]
+fn move_items(app: AppHandle, state: State<AppState>, ids: Vec<u64>, coll: Option<u64>) -> usize {
+    let mut moved = 0;
+    {
+        let mut store = state.store.lock().unwrap();
+        let locked = locked_colls(&store);
+        for item in store.items.iter_mut().filter(|i| ids.contains(&i.id)) {
+            // Escaping a locked collection would be a delete in two steps.
+            if is_frozen(item, &locked) {
+                continue;
+            }
+            item.coll = coll;
+            moved += 1;
+        }
+    }
+    publish(&app);
+    moved
 }
 
 #[tauri::command]
@@ -1060,6 +1187,10 @@ fn main() {
             toggle_fav,
             remove_item,
             clear_history,
+            add_collection,
+            lock_collection,
+            remove_collection,
+            move_items,
             set_settings,
             add_snippet,
             use_snippet,

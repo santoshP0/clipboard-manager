@@ -4,7 +4,7 @@ import {
   copyItem, hideSelf, isMac, removeItem, togglePin, useFitWindow, useQuickOpen, type Loaded,
 } from './api'
 import {
-  PIN_PATH, SEL_BAR, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, tintColor,
+  PIN_PATH, SEL_BAR, frozen, fz, hay, metaFor, relTime, s, segFilter, sub, subFont, tintColor,
   typeLabel,
 } from './lib'
 import {
@@ -78,6 +78,11 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
         fire((it.pinned ? 'Unpinned “' : 'Pinned “') + it.title + '”')
       } else if (mod && (e.key === 'Backspace' || e.key === 'Delete') && it) {
         e.preventDefault()
+        // The backend refuses these anyway; don't play the animation and lie.
+        if (frozen(it, store.collections ?? [])) {
+          fire('Locked collection — unlock it to delete')
+          return
+        }
         const row = document.querySelector<HTMLElement>(`[data-row="${it.id}"]`)
         if (row) dissolveElement(row, ['var(--text)', tintColor(it.kind), '#ffffff'])
         void removeItem(it.id)
@@ -90,7 +95,7 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [list, sel, copyAndClose, fire])
+  }, [list, sel, copyAndClose, fire, store.collections])
 
   return (
     <div ref={panel} style={s('width:760px;animation:popIn .22s cubic-bezier(.32,.72,0,1)')}>

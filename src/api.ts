@@ -10,7 +10,7 @@ export const win = getCurrentWindow()
 export const label = win.label
 export const isMac = navigator.userAgent.includes('Mac')
 
-const EMPTY: Store = { items: [], snippets: [], settings: DEFAULT_SETTINGS, nextId: 0 }
+const EMPTY: Store = { items: [], snippets: [], collections: [], settings: DEFAULT_SETTINGS, nextId: 0 }
 
 export type Loaded = { store: Store; state: 'loading' | 'ready' | 'error' }
 
@@ -59,8 +59,13 @@ export const copyText = (text: string) => invoke('copy_text', { text })
 export const copyFiles = (paths: string[]) => invoke<boolean>('copy_files', { paths })
 export const togglePin = (id: number) => invoke('toggle_pin', { id })
 export const toggleFav = (id: number) => invoke('toggle_fav', { id })
-export const removeItem = (id: number) => invoke('remove_item', { id })
+export const removeItem = (id: number) => invoke<boolean>('remove_item', { id })
 export const clearHistory = () => invoke('clear_history')
+export const addCollection = (name: string) => invoke<number>('add_collection', { name })
+export const lockCollection = (id: number) => invoke('lock_collection', { id })
+export const removeCollection = (id: number) => invoke<boolean>('remove_collection', { id })
+export const moveItems = (ids: number[], coll: number | null) =>
+  invoke<number>('move_items', { ids, coll })
 export const saveSettings = (settings: Settings) => invoke('set_settings', { settings })
 export const addSnippet = (name: string, trigger: string, body: string) =>
   invoke('add_snippet', { name, trigger, body })
