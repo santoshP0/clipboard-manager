@@ -486,7 +486,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                     <div style={s('display:flex;flex-direction:column;gap:10px;margin-bottom:16px')}>
                       {[
                         ['Type', item ? typeLabel(item.kind) : '—'],
-                        ['Source', item ? item.app : '—'],
+                        ...(item && item.app !== 'Unknown' ? [['Source', item.app]] : []),
                         ['Copied', item ? exactTime(item.ts) : '—'],
                         [meta.label, meta.value],
                       ].map(([k, v]) => (
@@ -1133,11 +1133,11 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
     setAdding(false)
   }
 
-  const live = settings.expandSnippets && trusted
+  const live = isMac && settings.expandSnippets && trusted
 
   return (
     <div style={s('padding:16px 18px;display:flex;flex-direction:column;gap:12px')}>
-      {snippets.length > 0 && (
+      {isMac && snippets.length > 0 && (
         <div
           style={{
             ...s('border-radius:11px;padding:13px 15px;display:flex;align-items:center;gap:12px'),
@@ -1164,6 +1164,14 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
               Open
             </button>
           )}
+        </div>
+      )}
+
+      {/* Expansion is macOS-only, so elsewhere say what snippets actually do
+          here rather than advertising a feature this build doesn't have. */}
+      {!isMac && snippets.length > 0 && (
+        <div style={s('font-size:11.5px;color:var(--text-3);line-height:1.5')}>
+          Hit Copy, or type a trigger into Quick Access ({hotkeyLabel}) to find and copy it.
         </div>
       )}
 
@@ -1470,7 +1478,7 @@ function SettingsPane({
     setTrusted(await accessibility())
   }
 
-  const needsSetup = settings.expandSnippets && !trusted
+  const needsSetup = isMac && settings.expandSnippets && !trusted
 
   const groups: { label: string; rows: { title: string; desc: string; control: ReactNode }[] }[] = [
     {
@@ -1552,7 +1560,7 @@ function SettingsPane({
         },
       ],
     },
-    {
+    ...(isMac ? [{
       label: 'Snippets',
       rows: [
         {
@@ -1565,7 +1573,7 @@ function SettingsPane({
           control: <Toggle on={settings.expandSnippets} onChange={() => void toggleExpand()} />,
         },
       ],
-    },
+    }] : []),
     {
       label: 'Privacy',
       rows: [
