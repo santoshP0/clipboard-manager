@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 540 cargo check --message-format short)",
+      "Bash(cargo check *)"
+    ]
+  }
+}

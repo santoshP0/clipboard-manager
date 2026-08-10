@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import {
   addSnippet, copyItem, isMac, openPath, removeItems, undoDelete, removeSnippet, saveSettings, thumbUrl,
@@ -7,7 +7,7 @@ import {
 } from './api'
 import {
   ACCENTS, ACCENT_NAMES, AUTO_CLEAR, HEART_PATH, HISTORY_LIMITS, MENU_VIEWS, UNDO_SECONDS, PIN_PATH, SEL_BAR, dayBucket,
-  exactTime, frozen, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont,
+  counts, exactTime, frozen, fz, hay, humanSize, metaFor, relTime, s, sectionFilter, sub, subFont,
   tintColor, typeLabel, type Collection, type Item, type Settings,
 } from './lib'
 import {
@@ -107,13 +107,22 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
   useGoto(useCallback((next: string) => setSection(next), []))
 
   const colls = store.collections ?? []
+  // One pass over the history instead of one filter-and-sort per sidebar label.
+  const navCounts = useMemo(() => counts(store.items), [store.items])
   const open = colls.find((c) => c.id === collection)
   const inCollection = section === 'Collections' && !!open
   const mode = inCollection ? 'list' : (MODE[section] ?? 'list')
-  const base = inCollection
-    ? sectionFilter(store.items.filter((x) => x.coll === open.id), 'History')
-    : sectionFilter(store.items, section)
-  const list = base.filter((x) => fz(fq, hay(x)))
+  // Both sort the whole history. Selecting a row or typing in the search box
+  // shouldn't redo that — only a change of items, section or query should.
+  const openId = open?.id
+  const base = useMemo(
+    () =>
+      openId != null
+        ? sectionFilter(store.items.filter((x) => x.coll === openId), 'History')
+        : sectionFilter(store.items, section),
+    [store.items, section, openId],
+  )
+  const list = useMemo(() => base.filter((x) => fz(fq, hay(x))), [base, fq])
   const sel = Math.min(anchor, Math.max(0, list.length - 1))
   const item = list[sel]
   const selected = new Set(selectedIds)
@@ -223,6 +232,16 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
     clearSel()
   }
 
+  // Same row with or without flames behind it, so hovering can't shift layout.
+  const deleteRow = (
+    <ActionRow
+      label={multi ? 'Delete ' + marked.length + ' items' : 'Delete from history'}
+      iconPath="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"
+      onClick={deleteMany}
+      danger
+    />
+  )
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey : e.ctrlKey
@@ -259,7 +278,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                   name === 'Snippets'
                     ? store.snippets.length
                     : COUNTED.includes(name)
-                      ? sectionFilter(store.items, name).length
+                      ? navCounts[name]
                       : null
                 return (
                   <div
@@ -569,28 +588,23 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                       Protected by a locked collection
                     </div>
                   ) : (
-                  <FlameWrap
-                    color={[1, 0.22, 0.06]}
-                    intensity={0.55}
-                    height={46}
-                    spread={9}
-                    radius={9}
-                    speed={0.35}
-                    melt={2}
-                    sparks={1.2}
-                    sparkSize={0.3}
-                    smoke={0.5}
-                    rim={2}
-                    ember={0}
-                    scorch={0}
-                  >
-                    <ActionRow
-                      label={multi ? 'Delete ' + marked.length + ' items' : 'Delete from history'}
-                      iconPath="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"
-                      onClick={deleteMany}
-                      danger
-                    />
-                  </FlameWrap>
+                    <FlameWrap
+                      color={[1, 0.22, 0.06]}
+                      intensity={0.55}
+                      height={46}
+                      spread={9}
+                      radius={9}
+                      speed={0.35}
+                      melt={2}
+                      sparks={1.2}
+                      sparkSize={0.3}
+                      smoke={0.5}
+                      rim={2}
+                      ember={0}
+                      scorch={0}
+                    >
+                      {deleteRow}
+                    </FlameWrap>
                   )}
                 </div>
               </div>

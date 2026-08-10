@@ -181,6 +181,8 @@ struct AppState {
     /// The most recent delete, held so it can be undone. Their preview files
     /// stay on disk until the next delete replaces them.
     trash: Mutex<Vec<Item>>,
+    /// Set when the store has changes not yet on disk.
+    dirty: AtomicBool,
 }
 
 /* ------------------------------------------------------------------ *
@@ -472,12 +474,35 @@ fn ensure_typing_monitor(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || watch_typing(handle));
 }
 
-/// Persist, then push the whole store to every window.
+/// Push the whole store to every window, and mark it for saving.
+///
+/// The windows update now; the disk write is debounced. Serialising the entire
+/// history on every single copy was the app's largest per-capture cost, and a
+/// clipboard manager captures constantly.
 fn publish(app: &AppHandle) {
     let state = app.state::<AppState>();
     let store = state.store.lock().unwrap();
-    save(&state.dir, &store);
+    state.dirty.store(true, Ordering::SeqCst);
     let _ = app.emit("store", &*store);
+}
+
+/// Write the store out if anything changed since the last write.
+fn flush(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if !state.dirty.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    let store = state.store.lock().unwrap();
+    save(&state.dir, &store);
+}
+
+/// Coalesces bursts of changes into one write. Worst case on a hard kill is the
+/// last second of history.
+fn watch_disk(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(900));
+        flush(&app);
+    });
 }
 
 /* ------------------------------------------------------------------ *
@@ -1664,6 +1689,7 @@ fn main() {
                 suppress_until: Mutex::new(0),
                 file_check: Mutex::new(0),
                 trash: Mutex::new(Vec::new()),
+                dirty: AtomicBool::new(false),
             });
 
             // The main window is up at launch, so claim a Dock icon to match.
@@ -1680,6 +1706,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             ensure_typing_monitor(&handle);
 
+            watch_disk(handle.clone());
             watch_clipboard(handle);
             Ok(())
         })
@@ -1699,6 +1726,10 @@ fn main() {
                         let _ = win.hide();
                     }
                     set_dock_visible(_app, false);
+                } else {
+                    // Every real termination passes here, so the debounced
+                    // write lands even when the tray's Quit is the caller.
+                    flush(_app);
                 }
             }
             _ => {}

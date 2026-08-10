@@ -301,6 +301,28 @@ export function segFilter(items: Item[], seg: string): Item[] {
   return pinnedFirst(items.filter((x) => x.kind === SEG_KIND[seg]))
 }
 
+/**
+ * Every segment's count in a single pass. The sidebar and the segment bar used
+ * to call the filters once per label, each of which copies and sorts the whole
+ * history — six or seven sorts per render, to show numbers that need no order.
+ */
+export function counts(items: Item[]): Record<string, number> {
+  const c: Record<string, number> = {
+    History: items.length, Recent: items.length, Timeline: items.length,
+    Pinned: 0, Favorites: 0, Images: 0, Code: 0, Files: 0, Links: 0, Collections: 0,
+  }
+  for (const it of items) {
+    if (it.pinned) c.Pinned++
+    if (it.fav) c.Favorites++
+    if (it.coll != null) c.Collections++
+    if (it.kind === 'image') c.Images++
+    else if (it.kind === 'code') c.Code++
+    else if (it.kind === 'file') c.Files++
+    else if (it.kind === 'link') c.Links++
+  }
+  return c
+}
+
 export function sectionFilter(items: Item[], section: string): Item[] {
   if (section === 'Favorites') return pinnedFirst(items.filter((x) => x.fav))
   const kind = SEG_KIND[section]

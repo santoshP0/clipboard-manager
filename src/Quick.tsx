@@ -5,7 +5,7 @@ import {
   type Loaded,
 } from './api'
 import {
-  PIN_PATH, SEL_BAR, frozen, fz, hay, metaFor, relTime, s, segFilter, snippetMatches, snippetRow,
+  PIN_PATH, SEL_BAR, counts, frozen, fz, hay, metaFor, relTime, s, segFilter, snippetMatches, snippetRow,
   sub, subFont, tintColor, typeLabel,
 } from './lib'
 import {
@@ -25,6 +25,9 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
   const listRef = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   useFitWindow(panel)
+
+  // One pass over the history instead of one filter-and-sort per segment.
+  const segCounts = useMemo(() => counts(store.items), [store.items])
 
   // Typing a trigger like ";sig" surfaces that snippet at the top, ready to paste.
   const list = useMemo(
@@ -151,7 +154,7 @@ export default function Quick({ loaded, fire }: { loaded: Loaded; fire: (msg: st
                 {name}
                 {settings.showCounts && (
                   <span style={{ fontSize: '10.5px', fontWeight: 600, color: on ? 'rgba(255,255,255,.75)' : 'var(--text-3)' }}>
-                    {segFilter(store.items, name).length}
+                    {segCounts[name]}
                   </span>
                 )}
               </button>
