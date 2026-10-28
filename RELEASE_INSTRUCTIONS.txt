@@ -30,7 +30,7 @@ STASH RELEASE INSTRUCTIONS
 WHAT THE RELEASE COMMAND DOES
 =============================
 
-- Requires the main branch to be clean and synchronized with origin/main.
+- Requires a clean main branch containing the latest origin/main.
 - Validates the version number and WHATS_NEW.txt.
 - Updates package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml,
   src-tauri/Cargo.lock, and the version displayed inside the app.

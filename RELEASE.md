@@ -20,7 +20,7 @@
 
 ## What the release command does
 
-- Requires a clean, fully synchronized `main` branch.
+- Requires a clean `main` branch containing the latest `origin/main`.
 - Validates the version and `WHATS_NEW.txt`.
 - Updates the web, Tauri, Rust, lockfile, and in-app version values.
 - Runs lint, the production frontend build, and `cargo check`.

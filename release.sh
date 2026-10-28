@@ -20,8 +20,9 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 git fetch origin main --quiet
-if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
-  echo "Release aborted: main must be fully synced with origin/main." >&2
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "Release aborted: origin/main has changes that are not in local main." >&2
+  echo "Pull or merge origin/main before releasing." >&2
   exit 1
 fi
 
