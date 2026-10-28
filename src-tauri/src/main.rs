@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -183,6 +183,12 @@ struct AppState {
     trash: Mutex<Vec<Item>>,
     /// Set when the store has changes not yet on disk.
     dirty: AtomicBool,
+    /// Clipboard capture sleeps on this while paused instead of polling.
+    capture_wake: Condvar,
+    capture_generation: Mutex<u64>,
+    /// Persistence sleeps here until a mutation actually needs writing.
+    disk_wake: Condvar,
+    disk_generation: Mutex<u64>,
 }
 
 /* ------------------------------------------------------------------ *
@@ -483,6 +489,10 @@ fn publish(app: &AppHandle) {
     let state = app.state::<AppState>();
     let store = state.store.lock().unwrap();
     state.dirty.store(true, Ordering::SeqCst);
+    if let Ok(mut generation) = state.disk_generation.lock() {
+        *generation = generation.wrapping_add(1);
+        state.disk_wake.notify_one();
+    }
     let _ = app.emit("store", &*store);
 }
 
@@ -500,7 +510,26 @@ fn flush(app: &AppHandle) {
 /// last second of history.
 fn watch_disk(app: AppHandle) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(900));
+        let state = app.state::<AppState>();
+        let generation = state.disk_generation.lock().unwrap();
+        let observed = *generation;
+        let mut generation = state
+            .disk_wake
+            .wait_while(generation, |current| *current == observed)
+            .unwrap();
+        // Debounce a burst of captures into a single full-store write.
+        loop {
+            let latest = *generation;
+            let (next, result) = state
+                .disk_wake
+                .wait_timeout(generation, Duration::from_millis(900))
+                .unwrap();
+            generation = next;
+            if result.timed_out() && *generation == latest {
+                break;
+            }
+        }
+        drop(generation);
         flush(&app);
     });
 }
@@ -860,32 +889,55 @@ fn prune(store: &mut Store) {
 }
 
 fn watch_clipboard(app: AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(POLL);
-        let state = app.state::<AppState>();
-        if state.store.lock().unwrap().settings.paused {
-            continue;
-        }
-        if now_ms() < *state.suppress_until.lock().unwrap() {
-            continue;
-        }
+    std::thread::spawn(move || {
+        let mut observed = 0;
+        loop {
+            // Wait indefinitely while paused. A settings change wakes us at
+            // once; while recording, the timeout preserves clipboard polling.
+            {
+                let state = app.state::<AppState>();
+                let generation = state.capture_generation.lock().unwrap();
+                let paused = state.store.lock().unwrap().settings.paused;
+                let generation = if paused {
+                    state
+                        .capture_wake
+                        .wait_while(generation, |current| *current == observed)
+                        .unwrap()
+                } else {
+                    state.capture_wake.wait_timeout(generation, POLL).unwrap().0
+                };
+                observed = *generation;
+            }
 
-        let text = app.clipboard().read_text().ok().filter(|t| !t.trim().is_empty());
-        let captured = match text {
-            Some(text) => capture_text(&app, &state, text),
-            // No text flavour: an image on the pasteboard, or a file URL alone.
-            None => capture_image(&app, &state) || capture_file(&app, &state),
-        };
+            let state = app.state::<AppState>();
+            if state.store.lock().unwrap().settings.paused {
+                continue;
+            }
+            if now_ms() < *state.suppress_until.lock().unwrap() {
+                continue;
+            }
 
-        let mut changed = captured;
-        {
-            let mut store = state.store.lock().unwrap();
-            let before = store.items.len();
-            prune(&mut store);
-            changed |= store.items.len() != before;
-        }
-        if changed {
-            publish(&app);
+            let text = app
+                .clipboard()
+                .read_text()
+                .ok()
+                .filter(|t| !t.trim().is_empty());
+            let captured = match text {
+                Some(text) => capture_text(&app, &state, text),
+                // No text flavour: an image on the pasteboard, or a file URL alone.
+                None => capture_image(&app, &state) || capture_file(&app, &state),
+            };
+
+            let mut changed = captured;
+            {
+                let mut store = state.store.lock().unwrap();
+                let before = store.items.len();
+                prune(&mut store);
+                changed |= store.items.len() != before;
+            }
+            if changed {
+                publish(&app);
+            }
         }
     });
 }
@@ -1401,6 +1453,10 @@ fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) {
         store.settings = settings;
         prune(&mut store);
     }
+    if let Ok(mut generation) = state.capture_generation.lock() {
+        *generation = generation.wrapping_add(1);
+        state.capture_wake.notify_one();
+    }
     // Changing a setting never prompts either. If permission already exists the
     // monitors come up; otherwise the Snippets page shows how to grant it.
     #[cfg(target_os = "macos")]
@@ -1690,6 +1746,10 @@ fn main() {
                 file_check: Mutex::new(0),
                 trash: Mutex::new(Vec::new()),
                 dirty: AtomicBool::new(false),
+                capture_wake: Condvar::new(),
+                capture_generation: Mutex::new(0),
+                disk_wake: Condvar::new(),
+                disk_generation: Mutex::new(0),
             });
 
             // The main window is up at launch, so claim a Dock icon to match.

@@ -617,7 +617,8 @@ export function createFlameWrap(
   let lastTime = performance.now();
   let destroyed = false;
   let running = false;
-  let visible = true;
+  let intersecting = true;
+  let visible = document.visibilityState === "visible";
 
   const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   let reducedMotion = motionQuery.matches;
@@ -663,10 +664,19 @@ export function createFlameWrap(
   observer.observe(content);
 
   const intersection = new IntersectionObserver((entries) => {
-    visible = entries[entries.length - 1]?.isIntersecting ?? true;
+    intersecting = entries[entries.length - 1]?.isIntersecting ?? true;
+    visible = intersecting && document.visibilityState === "visible";
     if (visible) start();
   });
   intersection.observe(output);
+
+  function onVisibilityChange() {
+    visible = intersecting && document.visibilityState === "visible";
+    if (!visible) cancelAnimationFrame(raf);
+    running = false;
+    if (visible) start();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   return {
     setOptions(next) {
@@ -700,6 +710,7 @@ export function createFlameWrap(
       cancelAnimationFrame(raf);
       observer.disconnect();
       intersection.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       motionQuery.removeEventListener("change", onMotionChange);
       gl!.deleteTexture(contentTexture);
       gl!.deleteProgram(program);

@@ -112,6 +112,7 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
   const open = colls.find((c) => c.id === collection)
   const inCollection = section === 'Collections' && !!open
   const mode = inCollection ? 'list' : (MODE[section] ?? 'list')
+  const searchable = mode === 'list' || mode === 'timeline' || mode === 'grid'
   // Both sort the whole history. Selecting a row or typing in the search box
   // shouldn't redo that — only a change of items, section or query should.
   const openId = open?.id
@@ -262,12 +263,20 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
 
   return (
     <div style={s('height:100%;display:flex;flex-direction:column;background:var(--surface);overflow:hidden')}>
-      <TitleBar section={section} />
-
       <div style={s('flex:1;display:flex;min-height:0')}>
         {/* sidebar */}
-        <div className="mem-scroll" style={s('width:220px;flex:none;background:var(--glass-2);border-right:.5px solid var(--line);overflow-y:auto;padding:12px 10px')}>
-          {NAV_GROUPS.map((g) => (
+        <div style={s('width:220px;flex:none;display:flex;flex-direction:column;background:var(--glass-2);border-right:.5px solid var(--line);min-height:0')}>
+          <div
+            data-tauri-drag-region
+            style={{
+              ...s('height:52px;flex:none;display:flex;align-items:center;border-bottom:.5px solid var(--line);font-size:13px;font-weight:650;letter-spacing:-.01em'),
+              paddingLeft: isMac ? 78 : 14,
+            }}
+          >
+            <span data-tauri-drag-region>Stash</span>
+          </div>
+          <div className="mem-scroll" style={s('flex:1;overflow-y:auto;padding:12px 10px')}>
+            {NAV_GROUPS.map((g) => (
             <div key={g.label} style={{ marginBottom: 14 }}>
               <div style={s('font-size:10.5px;font-weight:660;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);padding:4px 10px 6px')}>
                 {g.label}
@@ -300,12 +309,13 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                 )
               })}
             </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* content */}
         <div style={s('flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface)')}>
-          <div style={s('height:52px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:.5px solid var(--line)')}>
+          <div data-tauri-drag-region style={s('height:52px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:.5px solid var(--line);background:var(--glass)')}>
             {inCollection && (
               <button
                 onClick={() => { setCollection(null); clearSel(); setFq('') }}
@@ -344,16 +354,18 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                   {open.locked ? 'Locked' : 'Lock'}
                 </button>
               )}
-              <div style={s('display:flex;align-items:center;gap:8px;background:var(--surface-3);padding:6px 11px;border-radius:9px;width:200px')}>
-                <SearchIcon size={14} />
-                <input
-                  value={fq}
-                  onChange={(e) => { setFq(e.target.value); clearSel() }}
-                  placeholder="Search"
-                  spellCheck={false}
-                  style={s('flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;color:var(--text)')}
-                />
-              </div>
+              {searchable && (
+                <div style={s('display:flex;align-items:center;gap:8px;background:var(--surface-3);padding:6px 11px;border-radius:9px;width:200px')}>
+                  <SearchIcon size={14} />
+                  <input
+                    value={fq}
+                    onChange={(e) => { setFq(e.target.value); clearSel() }}
+                    placeholder="Search"
+                    spellCheck={false}
+                    style={s('flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;color:var(--text)')}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -420,9 +432,13 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
                   </div>
                 )
               ) : mode === 'timeline' ? (
-                <Timeline items={store.items} onCopy={copy} />
+                fq && list.length === 0
+                  ? <NoMatches seg={section} q={fq} />
+                  : <Timeline items={list} onCopy={copy} />
               ) : mode === 'grid' ? (
-                <Grid items={store.items} onCopy={copy} />
+                fq && list.length === 0
+                  ? <NoMatches seg={section} q={fq} />
+                  : <Grid items={list} onCopy={copy} />
               ) : mode === 'collections' ? (
                 <Collections items={store.items} colls={colls} onOpen={setCollection} fire={fire} />
               ) : mode === 'snippets' ? (
@@ -611,28 +627,6 @@ export default function Full({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
             )}
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ *
- * titlebar
- * ------------------------------------------------------------------ */
-
-function TitleBar({ section }: { section: string }) {
-  return (
-    <div
-      data-tauri-drag-region
-      style={s('height:44px;flex:none;display:flex;align-items:center;padding:0 14px;background:var(--glass);backdrop-filter:blur(30px);border-bottom:.5px solid var(--line);position:relative')}
-    >
-      {/* Space for the native traffic lights, which sit over this bar. */}
-      {isMac && <div style={{ width: 70, flex: 'none' }} />}
-      <div
-        data-tauri-drag-region
-        style={s('position:absolute;left:50%;transform:translateX(-50%);font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--text)')}
-      >
-        {section}
       </div>
     </div>
   )

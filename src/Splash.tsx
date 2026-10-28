@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 
 import { s } from './lib'
 
-/** Held long enough to read, even though the store loads almost instantly. */
-const MIN_MS = 1250
+/** A short native-feeling launch beat, without delaying a fast startup. */
+const MIN_MS = 700
 /** Splash fade-out and app fade-in run together, so they share this. */
-export const FADE_MS = 460
+export const FADE_MS = 280
 
 /** Launch screen for the main window. Removes itself once the store is in. */
 export default function Splash({ ready, onLeave }: { ready: boolean; onLeave: () => void }) {
@@ -34,32 +34,31 @@ export default function Splash({ ready, onLeave }: { ready: boolean; onLeave: ()
       style={{
         ...s('position:absolute;inset:0;z-index:120;display:grid;place-items:center;overflow:hidden;background:var(--surface)'),
         opacity: leaving ? 0 : 1,
-        transform: leaving ? 'scale(1.06)' : 'none',
-        transition: `opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms cubic-bezier(.32,.72,0,1)`,
+        transform: leaving ? 'scale(1.018)' : 'none',
+        transition: `opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms ease`,
         pointerEvents: leaving ? 'none' : 'auto',
       }}
     >
-      {/* Ambient accent light, so the panel isn't a flat white rectangle. */}
-      <div style={s('position:absolute;width:420px;height:420px;left:-120px;top:-140px;border-radius:50%;background:var(--accent);opacity:.13;filter:blur(90px);animation:drift 9s ease-in-out infinite')} />
-      <div style={s('position:absolute;width:360px;height:360px;right:-110px;bottom:-130px;border-radius:50%;background:var(--accent);opacity:.10;filter:blur(90px);animation:drift 11s ease-in-out infinite reverse')} />
+      <div style={s('position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,var(--sel),transparent 38%)')} />
 
-      <div style={s('position:relative;display:flex;flex-direction:column;align-items:center;gap:20px')}>
-        <div style={s('position:relative;animation:markIn .75s cubic-bezier(.34,1.42,.5,1) both,float 3.6s .75s ease-in-out infinite')}>
-          {/* The Dock icon itself, so launch and Dock read as one thing. */}
-          {/* Radius matches the SVG's own corners, so box-shadow traces the icon. */}
-          <img src="/mark.svg" width={88} height={88} alt="" style={s('display:block;border-radius:20px;box-shadow:var(--shadow)')} />
-          <div style={s('position:absolute;inset:-9px;border-radius:31px;border:1px solid var(--accent);animation:haloPulse 2.4s ease-in-out infinite')} />
-        </div>
+      <div style={s('position:relative;display:flex;flex-direction:column;align-items:center')}>
+        <img
+          src="/mark.svg"
+          width={78}
+          height={78}
+          alt=""
+          style={s('display:block;border-radius:18px;box-shadow:0 14px 35px -14px rgba(0,0,0,.45);animation:splashIcon .5s cubic-bezier(.2,.8,.2,1) both')}
+        />
 
-        <div style={s('text-align:center;animation:fadeUp .5s .3s both')}>
-          <div style={s('font-size:22px;font-weight:700;letter-spacing:-.022em')}>Stash</div>
-          <div style={s('font-size:12px;color:var(--text-3);font-weight:500;margin-top:4px;letter-spacing:-.005em')}>
+        <div style={s('text-align:center;margin-top:17px;animation:fadeUp .35s .12s both')}>
+          <div style={s('font-size:21px;font-weight:680;letter-spacing:-.025em')}>Stash</div>
+          <div style={s('font-size:12px;color:var(--text-3);font-weight:500;margin-top:5px')}>
             Everything you copy, kept
           </div>
         </div>
 
-        <div style={s('width:132px;height:3px;border-radius:3px;background:var(--surface-3);overflow:hidden;animation:fadeUp .5s .45s both')}>
-          <div style={s('width:45%;height:100%;border-radius:3px;background:var(--accent);animation:loadBar 1.15s cubic-bezier(.65,0,.35,1) infinite')} />
+        <div style={s('width:112px;height:2px;border-radius:2px;background:var(--surface-3);overflow:hidden;margin-top:22px;animation:fadeUp .35s .2s both')}>
+          <div style={s('width:42%;height:100%;border-radius:2px;background:var(--accent);animation:loadBar .9s cubic-bezier(.65,0,.35,1) infinite')} />
         </div>
       </div>
     </div>

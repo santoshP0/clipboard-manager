@@ -36,6 +36,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display"
 @keyframes markIn{from{opacity:0;transform:scale(.72) translateY(14px)}to{opacity:1;transform:none}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(50px,40px)}}
+@keyframes splashIcon{from{opacity:0;transform:scale(.9) translateY(5px)}to{opacity:1;transform:none}}
 ::selection{background:var(--sel-strong)}
 /* Panels scroll themselves; chaining past their ends bounces the frameless
    window and shows the desktop behind the titlebar. */
