@@ -152,7 +152,7 @@ bun run app
 The app launches and the interface hot-reloads as you edit `src/`. Changes to
 `src-tauri/src/` rebuild the Rust binary and relaunch, which takes a minute.
 
-**Building a release**
+**Building locally**
 
 ```sh
 bun run app:build
@@ -164,6 +164,22 @@ Bundles land in `src-tauri/target/release/bundle/` — `.app` and `.dmg` on macO
 macOS signing uses a local self-signed identity named `Memory Dev`. Create one
 in Keychain Access, or remove `bundle.macOS.signingIdentity` from
 `src-tauri/tauri.conf.json` to fall back to ad-hoc signing.
+
+**Publishing a release**
+
+Add the user-facing notes to `WHATS_NEW.txt`, commit all normal development
+changes, confirm the working tree is clean, then run:
+
+```sh
+npm run release -- 1.1.0
+```
+
+The script only runs from a clean `main` branch. It updates every version,
+builds and checks the app, creates the release commit and annotated tag, then
+atomically pushes both. The `v*` tag starts GitHub Actions, which builds and
+publishes installers for macOS, Windows, and Linux using `WHATS_NEW.txt` as the
+release notes. After the tag is successfully pushed, the script empties
+`WHATS_NEW.txt`, commits that reset, and pushes it for the next release.
 
 ## Licence
 

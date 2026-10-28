@@ -1257,7 +1257,7 @@ function Snippets({ loaded, fire }: { loaded: Loaded; fire: Fire }) {
  * buttons go live. Left empty the panel says so rather than pretending.
  */
 const DONATE_URL: string = ''
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '1.0.0' // release-version
 
 function About({ items }: { items: Item[] }) {
   const bytes = items.reduce((sum, x) => sum + (x.bytes || 0), 0)

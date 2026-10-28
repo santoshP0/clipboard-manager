@@ -1,0 +1,8 @@
+What's new in Stash 1.1.0
+
+- Lower idle CPU usage: clipboard capture now sleeps while paused, and disk saves wake only when data changes.
+- A more native desktop layout with a unified draggable toolbar and a fixed macOS traffic-light area.
+- A faster, calmer splash screen without continuous decorative animation.
+- Search appears only in useful library views and now works correctly in Timeline and Images.
+- The About, Statistics, Settings, Snippets, and Collections overview screens no longer show an unused search field.
+

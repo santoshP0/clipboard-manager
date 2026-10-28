@@ -47,6 +47,15 @@ jobs:
           workspaces: ./src-tauri -> target
           key: ${{ matrix.target }}
 
+      - name: Read release notes
+        id: release_notes
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const fs = require('fs');
+            return fs.readFileSync('WHATS_NEW.txt', 'utf8').trim();
+
       # Tauri on Linux needs the system webview and its build headers.
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -66,12 +75,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Stash ${{ github.ref_name }}'
-          releaseBody: |
-            Stash — a clipboard manager that keeps everything you copy.
-
-            Downloads below. The macOS builds are ad-hoc signed, so the first
-            launch needs a right-click → Open (Gatekeeper blocks a plain
-            double-click on unsigned downloads).
-          releaseDraft: true
+          releaseBody: ${{ steps.release_notes.outputs.result }}
+          # Tag pushes publish; a manual run remains a non-public build test.
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' }}
           prerelease: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
