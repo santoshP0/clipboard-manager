@@ -46,6 +46,15 @@ Tag-triggered workflows publish the release. Starting the workflow manually
 creates a draft, allowing it to be used as a non-public build test.
 
 
+UPDATER SIGNING KEY
+===================
+
+GitHub Actions signs updater bundles with the TAURI_SIGNING_PRIVATE_KEY secret.
+The private key is backed up locally at ~/.tauri/stash-updater.key. Never commit
+or share this file. The public key is embedded in src-tauri/tauri.conf.json.
+Losing the private key prevents future releases from updating existing installs.
+
+
 IMPORTANT
 =========
 

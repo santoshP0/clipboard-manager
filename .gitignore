@@ -11,6 +11,17 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+
+# Signing material must never enter the repository.
+*.key
+*.key.pub
+*.pem
+*.p12
+*.pfx
+.tauri/
 
 # Editor directories and files
 .vscode/*

@@ -69,6 +69,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -79,6 +80,14 @@
     ],
     "macOS": {
       "signingIdentity": "Memory Dev"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMzOUVBOEQ1QUE4RTZCQTgKUldTb2E0NnExYWlldzRFS1FoTWNoaU5tZTVPVWg5cEZ0UEZCajJjczhiU3VMMEc4K0VsTm1sbHAK",
+      "endpoints": [
+        "https://github.com/santoshP0/clipboard-manager/releases/latest/download/latest.json"
+      ]
     }
   }
 }

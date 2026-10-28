@@ -6,6 +6,7 @@ import Full from './Full'
 import Menu from './Menu'
 import Quick from './Quick'
 import Splash, { FADE_MS } from './Splash'
+import Updater from './Updater'
 import { hexA, s } from './lib'
 import { ErrorState } from './ui'
 
@@ -76,6 +77,7 @@ export default function App() {
             <Full loaded={loaded} fire={fire} />
           </div>
           <Splash ready={loaded.state !== 'loading'} onLeave={reveal} />
+          <Updater />
         </>
       )}
 

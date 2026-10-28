@@ -32,3 +32,11 @@
 
 Tag-triggered builds publish the GitHub release. Starting the workflow manually
 creates a draft instead, so it can be used as a non-public build test.
+
+## Updater signing key
+
+Updater bundles are signed with `TAURI_SIGNING_PRIVATE_KEY` in GitHub Actions.
+The corresponding private key is backed up locally at
+`~/.tauri/stash-updater.key`; it must never be committed or shared. The public
+key is embedded in `src-tauri/tauri.conf.json`. Losing the private key prevents
+future versions from updating installations that trust this key.

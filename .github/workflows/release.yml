@@ -68,6 +68,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           # tauri.conf.json signs locally with a self-signed cert that only
           # exists on the dev machine; CI has no such identity, so fall back to
           # ad-hoc. Set APPLE_CERTIFICATE and friends here to sign for real.

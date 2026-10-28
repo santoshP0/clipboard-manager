@@ -1,0 +1,4 @@
+What's new in Stash 1.2.0
+
+- Automatic updates now check quietly in the background and offer new versions inside the app.
+- Updates show release notes and download progress, verify a cryptographic signature, install, and restart Stash safely.

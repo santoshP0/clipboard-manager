@@ -1673,6 +1673,8 @@ fn main() {
     );
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Remember where the main window was left. The panels are excluded:
         // they size themselves to their content and are placed by the tray.
         .plugin(
